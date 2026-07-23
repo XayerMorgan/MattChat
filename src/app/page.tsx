@@ -731,11 +731,15 @@ export default function Home() {
     else setSourceB((s) => ({ ...s, ...patch }));
   };
 
-  const clearChat = () => {
+  const clearAllChats = () => {
     abortRef.current?.abort();
     setMessages([]);
+    setHistory([]);
+    setAttachments([]);
+    setInput("");
     setBusy(false);
-    setStatus("Chat cleared.");
+    busyRef.current = false;
+    setStatus("All chats cleared.");
   };
 
   const setWinner = (msgId: string, winner: "a" | "b" | "tie") => {
@@ -1566,7 +1570,20 @@ export default function Home() {
 
         {history.length > 0 && (
           <div className={styles.section}>
-            <div className={styles.sectionTitle}>Recent winners</div>
+            <div className={styles.sectionTitle}>
+              <span>Recent winners</span>
+              <button
+                type="button"
+                className={styles.linkish}
+                onClick={() => {
+                  setHistory([]);
+                  setStatus("Winner history cleared.");
+                }}
+                title="Clear A/B winner history only"
+              >
+                Clear
+              </button>
+            </div>
             <div className={styles.history}>
               {history.slice(0, 6).map((h) => (
                 <div key={h.id} className={styles.historyItem}>
@@ -1616,8 +1633,14 @@ export default function Home() {
                   ? "Retry scan"
                   : "Scan models"}
             </button>
-            <button type="button" className={styles.ghostBtn} onClick={clearChat}>
-              Clear
+            <button
+              type="button"
+              className={styles.ghostBtn}
+              onClick={clearAllChats}
+              disabled={busy && messages.length === 0}
+              title="Clear the conversation and recent A/B winners list"
+            >
+              Clear all chats
             </button>
           </div>
         </div>
