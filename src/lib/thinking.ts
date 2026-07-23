@@ -137,15 +137,23 @@ export function extractReasoningDelta(delta: unknown): string {
   return "";
 }
 
+function hasThinkMarkup(s: string): boolean {
+  const lower = s.toLowerCase();
+  for (const tag of OPEN_TAGS) {
+    if (lower.includes(tag.toLowerCase())) return true;
+  }
+  for (const tag of CLOSE_TAGS) {
+    if (lower.includes(tag.toLowerCase())) return true;
+  }
+  return false;
+}
+
 /**
- * After a stream ends, recover answer text that never arrived as `delta` events.
+ * After a stream ends, recover *only* answer text that was clearly separated
+ * from thinking (e.g. text after `</think>`).
  *
- * Common failure modes:
- * - Model left `<think>` unclosed → entire answer sat in the thinking channel
- * - Answer after `</think>` was still appended to thinking
- * - Provider only filled reasoning_content and left content empty
- *
- * Returns cleaned thinking + content suitable for the UI output box.
+ * Never dumps raw reasoning / LM Studio CoT into the output box. If the model
+ * only streamed thinking and no answer content, content stays empty.
  */
 export function finalizeStreamOutput(
   thinking: string,
@@ -177,8 +185,9 @@ export function finalizeStreamOutput(
     }
   }
 
-  // 2) Re-parse thinking as a full blob if content still empty (tags inside)
-  if (!c.trim() && t.trim()) {
+  // 2) Re-parse only when think *markup* is present — never treat plain
+  // reasoning_content as an answer (that was dumping CoT into Output).
+  if (!c.trim() && t.trim() && hasThinkMarkup(t)) {
     const reparsed = splitThinkingFromText(t);
     if (reparsed.content.trim()) {
       t = reparsed.thinking;
@@ -186,11 +195,8 @@ export function finalizeStreamOutput(
     }
   }
 
-  // 3) Last resort: provider put the whole reply in reasoning / think channel
-  if (!c.trim() && t.trim()) {
-    c = t;
-    // Keep thinking visible too so the Thinking block is not empty mid-stream history
-  }
+  // Do NOT promote remaining thinking → content. Leave output empty if the
+  // model never produced an answer channel; ThinkingBlock already shows CoT.
 
   return { thinking: t, content: c };
 }

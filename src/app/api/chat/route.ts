@@ -250,27 +250,20 @@ export async function POST(request: Request) {
           send({ type: "delta", text: tail.content });
         }
 
-        // If the answer never arrived as content (common with unclosed <think>
-        // or reasoning-only streams), peel/promote so clients get a delta.
+        // Only recover text that is clearly an answer after think markup
+        // (e.g. after </think>). Never re-emit pure CoT as a content delta.
         if (!accContent.trim() && accThinking.trim()) {
-          const recovered = finalizeStreamOutput(accThinking, accContent);
-          const extra = recovered.content;
-          if (extra.trim()) {
-            // Only send the portion that was not already streamed as content
-            const already = accContent;
-            const toSend = extra.startsWith(already)
-              ? extra.slice(already.length)
-              : already
-                ? ""
-                : extra;
-            // When content was empty, send full recovered answer once
-            const payload = already ? toSend : extra;
-            if (payload.trim()) {
-              if (firstAnswerAt === null) firstAnswerAt = Date.now();
-              send({ type: "delta", text: payload });
-              accContent = extra;
-            }
-            // If we peeled thinking down, client will also re-finalize
+          const recovered = finalizeStreamOutput(accThinking, "");
+          const extra = recovered.content.trim();
+          // Guard: recovered answer must not be the entire reasoning blob
+          if (
+            extra &&
+            extra !== accThinking.trim() &&
+            extra.length < accThinking.length
+          ) {
+            if (firstAnswerAt === null) firstAnswerAt = Date.now();
+            send({ type: "delta", text: recovered.content });
+            accContent = recovered.content;
           }
         }
 

@@ -1316,15 +1316,13 @@ export default function Home() {
             ? composedA.personalityName
             : composedB.personalityName;
 
-        // Prefer stream result (already finalized for think→answer recovery),
-        // then draft, then thinking-as-output last resort so A never stays blank.
+        // Prefer stream result (finalize may peel post-</think> answer only).
+        // Never dump thinking/CoT into the output box.
         const finalText = result.error
           ? abDraft[which].text || result.error
           : result.text.trim()
             ? result.text
-            : abDraft[which].text.trim()
-              ? abDraft[which].text
-              : (result.thinking || abDraft[which].thinking || "").trim();
+            : abDraft[which].text;
         const finalThinking =
           result.thinking || abDraft[which].thinking || "";
 
