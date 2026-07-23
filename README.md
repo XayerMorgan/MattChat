@@ -1,5 +1,9 @@
 # MattChat
 
+<p align="center">
+  <img src="public/social-preview.jpg" alt="MattChat" width="720" />
+</p>
+
 Local web chat client for a **shared LM Studio server** (and optional cloud APIs), with side-by-side **A/B testing**.
 
 ## How this is meant to work

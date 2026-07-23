@@ -17,6 +17,30 @@ export const metadata: Metadata = {
   title: "MattChat",
   description:
     "MattChat — chat frontend for LM Studio and commercial APIs with side-by-side source A/B testing.",
+  // opengraph-image.jpg / twitter-image.jpg in this folder are picked up automatically.
+  // Absolute fallback for share cards when the app is hosted on a public origin:
+  openGraph: {
+    title: "MattChat",
+    description:
+      "Chat frontend for LM Studio and commercial APIs with side-by-side A/B testing.",
+    type: "website",
+    siteName: "MattChat",
+    images: [
+      {
+        url: "/social-preview.jpg",
+        width: 1344,
+        height: 768,
+        alt: "MattChat",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "MattChat",
+    description:
+      "Chat frontend for LM Studio and commercial APIs with side-by-side A/B testing.",
+    images: ["/social-preview.jpg"],
+  },
 };
 
 /**
