@@ -147,9 +147,9 @@ type SourceRuntime = {
   hasLoadState?: boolean;
 };
 
-// Bumped: drop stale localStorage that hard-coded qwen/qwen3.5-9b and
-// caused LM Studio to load a second model on chat.
-const STORAGE_KEY = "mattchat-v7";
+// Bumped to drop corrupt A/B winner history (duplicate React keys) and other
+// stale client prefs. Older mattchat-v* keys are removed on hydrate.
+const STORAGE_KEY = "mattchat-v8";
 
 /** Never hardcode a catalog id — server pins chat to the already-loaded model. */
 const DEFAULT_LM_MODEL = "";
@@ -252,6 +252,19 @@ export default function Home() {
   // Hydrate prefs client-side only. Never contacts LM Studio.
   useEffect(() => {
     try {
+      // Drop older storage versions (duplicate history keys, old defaults, etc.)
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && /^mattchat-v\d+$/.test(k) && k !== STORAGE_KEY) {
+            localStorage.removeItem(k);
+            i -= 1;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
