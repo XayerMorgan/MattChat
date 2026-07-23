@@ -21,7 +21,7 @@ export function CopyBox({
   const [copied, setCopied] = useState(false);
 
   const onCopy = useCallback(async () => {
-    const value = text || "";
+    const value = typeof text === "string" ? text : String(text ?? "");
     if (!value.trim()) return;
     try {
       await navigator.clipboard.writeText(value);
@@ -43,7 +43,8 @@ export function CopyBox({
     window.setTimeout(() => setCopied(false), 1600);
   }, [text]);
 
-  if (hideIfEmpty && !text?.trim()) return null;
+  const value = typeof text === "string" ? text : String(text ?? "");
+  if (hideIfEmpty && !value.trim()) return null;
 
   return (
     <div className={`${styles.wrap} ${className || ""}`}>
@@ -53,14 +54,14 @@ export function CopyBox({
           type="button"
           className={`${styles.copyBtn} ${copied ? styles.copied : ""}`}
           onClick={() => void onCopy()}
-          disabled={!text?.trim()}
+          disabled={!value.trim()}
           title="Copy output text to clipboard"
         >
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
       <pre className={styles.box} tabIndex={0}>
-        {text}
+        {value}
       </pre>
     </div>
   );

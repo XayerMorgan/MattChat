@@ -2053,15 +2053,19 @@ export default function Home() {
                                   ""
                                 )}
                                 <TimingStrip timing={pane.timing} />
-                                {pane.text?.trim() ? (
-                                  <CopyBox
-                                    text={pane.text}
-                                    label={`Copy ${side.toUpperCase()}`}
-                                  />
-                                ) : null}
                               </>
                             )}
                           </div>
+                          {/* Outside abBody so white-space/overflow never hide A or B copy UI */}
+                          {!pane.error && (pane.text || "").trim() ? (
+                            <div className={styles.abCopy}>
+                              <CopyBox
+                                text={pane.text}
+                                label={`Copy ${side.toUpperCase()}`}
+                                hideIfEmpty={false}
+                              />
+                            </div>
+                          ) : null}
                           <div className={styles.abFooter}>
                             <button
                               type="button"

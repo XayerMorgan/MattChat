@@ -539,6 +539,8 @@
 .abBody {
   padding: 0.95rem;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.55;
@@ -547,6 +549,17 @@
 
 .abBodyError {
   color: var(--danger);
+}
+
+/* Copy boxes sit below the scrollable answer so both A and B stay visible */
+.abCopy {
+  flex-shrink: 0;
+  padding: 0 0.75rem 0.55rem;
+  white-space: normal;
+}
+
+.abCopy :global(pre) {
+  max-height: 140px;
 }
 
 .streaming {
