@@ -158,7 +158,6 @@ curl -s -o /dev/null -w "%{http_code}\n" http://vpit-llm2.jck.txstate.edu:1234/v
 | **[SETUP.md](./SETUP.md)** | Full install (Mac / Linux / Windows), env, troubleshooting |
 | **[BUDDY.md](./BUDDY.md)** | Short handoff for a teammate (“clone, run, point here”) |
 | **[docs/SERVER.md](./docs/SERVER.md)** | Multi-user Mac Studio hosting, capacity, admin API |
-| **[AGENTS.md](./AGENTS.md)** | Notes for AI coding agents |
 
 ---
 
