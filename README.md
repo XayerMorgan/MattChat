@@ -55,7 +55,7 @@ node -v   # should print v18+ or v20+
 **macOS**
 
 ```bash
-git clone <THIS_REPO_URL>
+git clone https://github.com/XayerMorgan/MattChat.git
 cd MattChat
 chmod +x scripts/*.sh
 ./scripts/start-mac.sh
@@ -64,7 +64,7 @@ chmod +x scripts/*.sh
 **Linux**
 
 ```bash
-git clone <THIS_REPO_URL>
+git clone https://github.com/XayerMorgan/MattChat.git
 cd MattChat
 chmod +x scripts/*.sh
 ./scripts/start-linux.sh
@@ -73,7 +73,7 @@ chmod +x scripts/*.sh
 **Windows (PowerShell)**
 
 ```powershell
-git clone <THIS_REPO_URL>
+git clone https://github.com/XayerMorgan/MattChat.git
 cd MattChat
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # once if scripts are blocked
 .\scripts\start-windows.ps1

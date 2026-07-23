@@ -23,7 +23,7 @@ You do **not** need LM Studio on your laptop.
 ### Mac
 
 ```bash
-git clone <REPO_URL>
+git clone https://github.com/XayerMorgan/MattChat.git
 cd MattChat
 chmod +x scripts/*.sh
 ./scripts/start-mac.sh
@@ -32,7 +32,7 @@ chmod +x scripts/*.sh
 ### Linux
 
 ```bash
-git clone <REPO_URL>
+git clone https://github.com/XayerMorgan/MattChat.git
 cd MattChat
 chmod +x scripts/*.sh
 ./scripts/start-linux.sh
@@ -41,7 +41,7 @@ chmod +x scripts/*.sh
 ### Windows (PowerShell)
 
 ```powershell
-git clone <REPO_URL>
+git clone https://github.com/XayerMorgan/MattChat.git
 cd MattChat
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\scripts\start-windows.ps1
@@ -86,7 +86,7 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 
 ```text
 1. Install Node LTS from https://nodejs.org
-2. git clone <REPO_URL> && cd MattChat
+2. git clone https://github.com/XayerMorgan/MattChat.git && cd MattChat
 3. Mac/Linux:  ./scripts/start-mac.sh   or  ./scripts/start-linux.sh
    Windows:    .\scripts\start-windows.ps1
 4. Open http://localhost:3010

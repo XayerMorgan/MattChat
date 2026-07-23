@@ -79,7 +79,7 @@ npm -v
 ## Get MattChat
 
 ```bash
-git clone <THIS_REPO_URL>
+git clone https://github.com/XayerMorgan/MattChat.git
 cd MattChat
 ```
 
