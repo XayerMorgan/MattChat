@@ -24,6 +24,11 @@ export type StreamResult = {
   answerTtftMs?: number | null;
   usage?: StreamUsage;
   error?: string;
+  /** OpenAI-style finish_reason, e.g. stop | length */
+  finishReason?: string | null;
+  /** True when the model hit max_tokens mid-reply */
+  truncated?: boolean;
+  maxTokens?: number | null;
 };
 
 export async function streamChat(opts: {
@@ -66,6 +71,9 @@ export async function streamChat(opts: {
   let answerTtftMs: number | null | undefined;
   let usage: StreamUsage | undefined;
   let error: string | undefined;
+  let finishReason: string | null | undefined;
+  let truncated = false;
+  let maxTokens: number | null | undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -92,6 +100,9 @@ export async function streamChat(opts: {
         totalTokens?: number | null;
         reasoningTokens?: number | null;
         error?: string;
+        finishReason?: string | null;
+        truncated?: boolean;
+        maxTokens?: number | null;
       };
       try {
         event = JSON.parse(trimmed);
@@ -122,6 +133,10 @@ export async function streamChat(opts: {
           totalTokens: event.totalTokens ?? null,
           reasoningTokens: event.reasoningTokens ?? null,
         };
+        finishReason = event.finishReason ?? null;
+        truncated = Boolean(event.truncated || event.finishReason === "length");
+        maxTokens =
+          typeof event.maxTokens === "number" ? event.maxTokens : null;
       } else if (event.type === "error") {
         error = event.error || "Unknown stream error";
       }
@@ -132,8 +147,15 @@ export async function streamChat(opts: {
   // so A/B (and single) output boxes are not left empty after a long CoT.
   const finalized = finalizeStreamOutput(thinking, text);
 
+  let outText = finalized.content;
+  if (truncated && outText.trim()) {
+    outText = `${outText.trimEnd()}\n\n— [Stopped: hit max tokens${
+      maxTokens != null ? ` (${maxTokens})` : ""
+    }. Raise Max tokens in the source panel or switch to Thinking mode.]`;
+  }
+
   return {
-    text: finalized.content,
+    text: outText,
     thinking: finalized.thinking,
     meta,
     latencyMs,
@@ -141,5 +163,8 @@ export async function streamChat(opts: {
     answerTtftMs,
     usage,
     error,
+    finishReason,
+    truncated,
+    maxTokens,
   };
 }

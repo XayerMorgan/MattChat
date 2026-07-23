@@ -405,7 +405,7 @@ export default function Home() {
         }
       : {
           enableThinking: true,
-          maxTokens: 4096,
+          maxTokens: FAST_DEFAULTS.thinkingMaxTokens,
         };
     setSourceA((s) => ({ ...s, ...patch }));
     setSourceB((s) => ({ ...s, ...patch }));
@@ -1143,6 +1143,11 @@ export default function Home() {
             (result.ttftMs != null ? ` · TTFT ${formatMs(result.ttftMs)}` : "") +
             tok +
             (result.thinking ? " · thinking shown" : "") +
+            (result.truncated
+              ? ` · TRUNCATED at max tokens${
+                  result.maxTokens != null ? ` (${result.maxTokens})` : ""
+                } — raise Max tokens`
+              : "") +
             " · 1 request"
         );
       } catch (err) {
@@ -1289,6 +1294,8 @@ export default function Home() {
       },
     ]);
 
+    const truncatedSides: string[] = [];
+
     const runPane = async (
       which: "a" | "b",
       source: SourceConfig,
@@ -1310,6 +1317,8 @@ export default function Home() {
           },
         });
 
+        if (result.truncated) truncatedSides.push(which.toUpperCase());
+
         const endIso = nowIso();
         const personalityName =
           which === "a"
@@ -1318,6 +1327,7 @@ export default function Home() {
 
         // Prefer stream result (finalize may peel post-</think> answer only).
         // Never dump thinking/CoT into the output box.
+        // result.text already includes a truncation notice when finish_reason=length.
         const finalText = result.error
           ? abDraft[which].text || result.error
           : result.text.trim()
@@ -1417,7 +1427,12 @@ export default function Home() {
         runPane("a", activeA, messagesA),
         runPane("b", activeB, messagesB),
       ]);
-      setStatus("A/B complete — 2 parallel requests. Pick a winner if you want.");
+      setStatus(
+        "A/B complete — 2 parallel requests. Pick a winner if you want." +
+          (truncatedSides.length
+            ? ` · TRUNCATED on ${truncatedSides.join(" & ")} — raise Max tokens`
+            : "")
+      );
     } finally {
       setBusy(false);
       busyRef.current = false;
@@ -1728,13 +1743,17 @@ export default function Home() {
           <input
             type="range"
             min={256}
-            max={8192}
+            max={16384}
             step={256}
             value={source.maxTokens ?? FAST_DEFAULTS.maxTokens}
             onChange={(e) =>
               updateSource(which, { maxTokens: Number(e.target.value) })
             }
           />
+          <p className={styles.hint}>
+            Hard cap on completion length. Long Board-style memos need ≥4k;
+            if output stops mid-sentence, raise this or switch to Thinking.
+          </p>
         </div>
 
         <div
@@ -1898,13 +1917,14 @@ export default function Home() {
             {fastMode ? (
               <>
                 <strong>Fast:</strong> no chain-of-thought, max{" "}
-                {FAST_DEFAULTS.maxTokens} tokens, short history. Qwen gets{" "}
-                <code>/no_think</code>.
+                {FAST_DEFAULTS.maxTokens} tokens (raise in Max tokens for long
+                memos), short history. Qwen gets <code>/no_think</code>.
               </>
             ) : (
               <>
-                <strong>Thinking:</strong> full CoT (can take minutes). Use for
-                hard analysis only.
+                <strong>Thinking:</strong> full CoT, max{" "}
+                {FAST_DEFAULTS.thinkingMaxTokens} tokens (can take minutes). Use
+                for hard analysis.
               </>
             )}
           </p>

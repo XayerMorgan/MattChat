@@ -3,7 +3,13 @@ import type { ChatMessage, ContentPart, SourceConfig } from "@/lib/providers";
 /** Default: fast path for Mac Metal interactive chat */
 export const FAST_DEFAULTS = {
   enableThinking: false,
-  maxTokens: 1024,
+  /**
+   * Fast mode still needs room for structured answers (risk matrices, memos).
+   * 1024 cut off mid-sentence on long CIO-style prompts.
+   */
+  maxTokens: 4096,
+  /** Thinking / deep mode default completion budget */
+  thinkingMaxTokens: 8192,
   /** How many prior user/assistant pairs to keep */
   maxTurns: 2,
   temperature: 0.5,
@@ -43,7 +49,8 @@ export function prepareMessagesForSpeed(
   const noThinkSystem =
     "Speed mode: answer directly in plain language. " +
     "Do NOT write <think> blocks, chain-of-thought, or hidden reasoning. " +
-    "Prefer under 150 words unless the user asks for depth.";
+    "Match response length to the request: short for simple questions, " +
+    "complete and structured when the user asks for matrices, memos, or multi-part analysis.";
 
   // Strengthen / replace system
   if (out.length && out[0].role === "system") {
@@ -89,7 +96,9 @@ export function prepareMessagesForSpeed(
 
 export function resolveMaxTokens(source: SourceConfig): number {
   if (typeof source.maxTokens === "number" && source.maxTokens > 0) {
-    return source.maxTokens;
+    return Math.min(Math.floor(source.maxTokens), 32768);
   }
-  return source.enableThinking === true ? 4096 : FAST_DEFAULTS.maxTokens;
+  return source.enableThinking === true
+    ? FAST_DEFAULTS.thinkingMaxTokens
+    : FAST_DEFAULTS.maxTokens;
 }

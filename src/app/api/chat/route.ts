@@ -159,7 +159,10 @@ export async function POST(request: Request) {
             typeof client.chat.completions.create
           >[0]
         )) as AsyncIterable<{
-          choices?: Array<{ delta?: Record<string, unknown> }>;
+          choices?: Array<{
+            delta?: Record<string, unknown>;
+            finish_reason?: string | null;
+          }>;
           usage?: {
             prompt_tokens?: number;
             completion_tokens?: number;
@@ -172,6 +175,7 @@ export async function POST(request: Request) {
         let completionTokens: number | null = null;
         let totalTokens: number | null = null;
         let reasoningTokens: number | null = null;
+        let finishReason: string | null = null;
         // Accumulate for end-of-stream recovery when answer never left the
         // thinking channel (unclosed tags / reasoning-only providers).
         let accThinking = "";
@@ -193,7 +197,11 @@ export async function POST(request: Request) {
             if (typeof rt === "number") reasoningTokens = rt;
           }
 
-          const delta = chunk.choices?.[0]?.delta;
+          const choice = chunk.choices?.[0];
+          if (choice?.finish_reason) {
+            finishReason = choice.finish_reason;
+          }
+          const delta = choice?.delta;
           if (!delta) continue;
 
           const reasoning = extractReasoningDelta(delta);
@@ -276,6 +284,9 @@ export async function POST(request: Request) {
           completionTokens,
           totalTokens,
           reasoningTokens,
+          finishReason,
+          maxTokens,
+          truncated: finishReason === "length",
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
