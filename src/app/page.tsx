@@ -37,14 +37,16 @@ import { streamChat } from "@/lib/streamClient";
 import { mattchatHeaders } from "@/lib/clientId";
 import {
   newSessionId,
-  promptAndDownloadMetrics,
   promptPreview,
+  runSessionExport,
   type QueryMetric,
+  type TranscriptMessage,
 } from "@/lib/sessionMetrics";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { TimingCompare, TimingStrip } from "@/components/TimingStrip";
 import { ApiKeysButton, KeyManager } from "@/components/KeyManager";
 import { HostStatusBar } from "@/components/HostStatusBar";
+import { ExportSessionModal } from "@/components/ExportSessionModal";
 
 type Mode = "single" | "ab";
 type ConnState = "idle" | "loading" | "ok" | "error";
@@ -197,6 +199,8 @@ export default function Home() {
   const [history, setHistory] = useState<AbHistoryItem[]>([]);
   const [status, setStatus] = useState("");
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<"export" | "clear">("export");
   const [sessionId] = useState(() => newSessionId());
   const [sessionMetrics, setSessionMetrics] = useState<QueryMetric[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -743,52 +747,73 @@ export default function Home() {
     else setSourceB((s) => ({ ...s, ...patch }));
   };
 
-  const exportSessionCsv = (opts?: { required?: boolean }) => {
-    if (!sessionMetrics.length) {
-      if (opts?.required) {
-        setStatus("No query metrics in this session yet.");
-      }
-      return null;
+  const openExport = (mode: "export" | "clear") => {
+    if (mode === "export" && !sessionMetrics.length && !messages.length) {
+      setStatus("Nothing to export yet — send a chat first.");
+      return;
     }
-    const name = promptAndDownloadMetrics(sessionMetrics, sessionId);
-    if (name) {
-      setStatus(
-        `Saved ${sessionMetrics.length} quer${sessionMetrics.length === 1 ? "y" : "ies"} → ${name}`
-      );
-    } else if (opts?.required === false) {
-      setStatus("CSV export cancelled.");
+    if (mode === "clear") {
+      abortRef.current?.abort();
+      setBusy(false);
+      busyRef.current = false;
     }
-    return name;
+    setExportMode(mode);
+    setExportOpen(true);
   };
 
-  const clearAllChats = () => {
-    abortRef.current?.abort();
+  const applyExportAndMaybeClear = (opts: {
+    csvFilename: string;
+    chatFilename: string;
+    saveMetrics: boolean;
+    saveChat: boolean;
+    sessionNote: string;
+    abQualityNote: string;
+    clearAfter: boolean;
+  }) => {
+    const transcript = messages as unknown as TranscriptMessage[];
+    const saved = runSessionExport({
+      metrics: sessionMetrics,
+      messages: transcript,
+      sessionId,
+      exportOpts: {
+        csvFilename: opts.csvFilename,
+        chatFilename: opts.chatFilename,
+        saveMetrics: opts.saveMetrics,
+        saveChat: opts.saveChat,
+        sessionNote: opts.sessionNote,
+        abQualityNote: opts.abQualityNote,
+      },
+    });
 
-    // Prompt to name & download session metrics before wiping the UI
-    if (sessionMetrics.length > 0) {
-      const name = promptAndDownloadMetrics(sessionMetrics, sessionId);
-      if (name == null) {
-        // User cancelled the filename prompt — don't clear
-        setStatus("Clear cancelled — name a CSV file to export metrics, or cancel to keep chats.");
-        setBusy(false);
-        busyRef.current = false;
-        return;
-      }
+    const bits: string[] = [];
+    if (saved.csvName) bits.push(`metrics → ${saved.csvName}`);
+    if (saved.chatName) bits.push(`chat → ${saved.chatName}`);
+    if (opts.abQualityNote.trim()) bits.push("A/B note included");
+    if (opts.sessionNote.trim()) bits.push("session notes included");
+
+    if (opts.clearAfter) {
+      setMessages([]);
+      setHistory([]);
+      setAttachments([]);
+      setInput("");
+      setSessionMetrics([]);
       setStatus(
-        `Exported ${sessionMetrics.length} quer${sessionMetrics.length === 1 ? "y" : "ies"} → ${name}. Chats cleared.`
+        bits.length
+          ? `Exported ${bits.join(" · ")}. Chats cleared.`
+          : "All chats cleared (nothing exported)."
       );
     } else {
-      setStatus("All chats cleared.");
+      setStatus(
+        bits.length ? `Exported ${bits.join(" · ")}.` : "Nothing selected to export."
+      );
     }
-
-    setMessages([]);
-    setHistory([]);
-    setAttachments([]);
-    setInput("");
-    setSessionMetrics([]);
-    setBusy(false);
-    busyRef.current = false;
+    setExportOpen(false);
   };
+
+  const hasAbInSession =
+    messages.some((m) => m.kind === "ab") ||
+    sessionMetrics.some((m) => m.mode === "ab") ||
+    history.length > 0;
 
   const setWinner = (msgId: string, winner: "a" | "b" | "tie") => {
     setMessages((prev) => {
@@ -1789,23 +1814,21 @@ export default function Home() {
             <button
               type="button"
               className={styles.ghostBtn}
-              disabled={!sessionMetrics.length}
-              title={
-                sessionMetrics.length
-                  ? `Export ${sessionMetrics.length} query metrics as CSV`
-                  : "No metrics yet — send a chat first"
-              }
-              onClick={() => exportSessionCsv({ required: true })}
+              disabled={!sessionMetrics.length && !messages.length}
+              title="Export metrics CSV and/or full chat transcript"
+              onClick={() => openExport("export")}
             >
-              Export CSV
+              Export
               {sessionMetrics.length > 0 ? ` (${sessionMetrics.length})` : ""}
             </button>
             <button
               type="button"
               className={styles.ghostBtn}
-              onClick={clearAllChats}
-              disabled={busy && messages.length === 0 && !sessionMetrics.length}
-              title="Export session metrics CSV (name the file), then clear conversation"
+              onClick={() => openExport("clear")}
+              disabled={
+                busy && messages.length === 0 && !sessionMetrics.length
+              }
+              title="Optionally export CSV + chat (with A/B notes), then clear"
             >
               Clear all chats
             </button>
@@ -2125,6 +2148,21 @@ export default function Home() {
         open={apiConfigOpen}
         onOpenChange={setApiConfigOpen}
         panelOnly
+      />
+      <ExportSessionModal
+        open={exportOpen}
+        mode={exportMode}
+        sessionId={sessionId}
+        metricsCount={sessionMetrics.length}
+        messagesCount={messages.length}
+        hasAb={hasAbInSession}
+        onCancel={() => {
+          setExportOpen(false);
+          if (exportMode === "clear") {
+            setStatus("Clear cancelled — chats kept.");
+          }
+        }}
+        onConfirm={applyExportAndMaybeClear}
       />
     </div>
   );
