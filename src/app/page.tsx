@@ -1139,6 +1139,45 @@ export default function Home() {
     const messagesB = buildMessagesForSource(apiContent, composedB);
 
     const abId = uid();
+    const initialA: PaneState = {
+      text: "",
+      thinking: "",
+      thinkingActive: false,
+      label: `${sourceLabel(activeA.provider, activeA.model)} · ${composedA.personalityName}`,
+      model: activeA.model,
+      loading: true,
+      timing: { startIso },
+    };
+    const initialB: PaneState = {
+      text: "",
+      thinking: "",
+      thinkingActive: false,
+      label: `${sourceLabel(activeB.provider, activeB.model)} · ${composedB.personalityName}`,
+      model: activeB.model,
+      loading: true,
+      timing: { startIso },
+    };
+
+    // Authoritative live draft for this A/B turn. Parallel stream setStates used to
+    // clobber each other (especially on a 2nd test in one session), so pane A text
+    // could vanish and both copy boxes looked like they lived under B.
+    const abDraft = {
+      a: { ...initialA },
+      b: { ...initialB },
+    };
+
+    const publishAb = (which: "a" | "b", patch: Partial<PaneState>) => {
+      abDraft[which] = { ...abDraft[which], ...patch };
+      const snapA = { ...abDraft.a };
+      const snapB = { ...abDraft.b };
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== abId || msg.kind !== "ab") return msg;
+          return { ...msg, a: snapA, b: snapB };
+        })
+      );
+    };
+
     setMessages((m) => [
       ...m,
       {
@@ -1146,24 +1185,8 @@ export default function Home() {
         kind: "ab",
         prompt: display,
         startIso,
-        a: {
-          text: "",
-          thinking: "",
-          thinkingActive: false,
-          label: `${sourceLabel(activeA.provider, activeA.model)} · ${composedA.personalityName}`,
-          model: activeA.model,
-          loading: true,
-          timing: { startIso },
-        },
-        b: {
-          text: "",
-          thinking: "",
-          thinkingActive: false,
-          label: `${sourceLabel(activeB.provider, activeB.model)} · ${composedB.personalityName}`,
-          model: activeB.model,
-          loading: true,
-          timing: { startIso },
-        },
+        a: { ...initialA },
+        b: { ...initialB },
       },
     ]);
 
@@ -1178,57 +1201,21 @@ export default function Home() {
           messages: apiMessages,
           signal: controller.signal,
           onMeta: (meta) => {
-            setMessages((prev) =>
-              prev.map((msg) => {
-                if (msg.id !== abId || msg.kind !== "ab") return msg;
-                return {
-                  ...msg,
-                  [which]: {
-                    ...msg[which],
-                    label: meta.label,
-                    model: meta.model,
-                  },
-                };
-              })
-            );
+            publishAb(which, { label: meta.label, model: meta.model });
           },
           onThinking: (_chunk, full) => {
-            setMessages((prev) =>
-              prev.map((msg) => {
-                if (msg.id !== abId || msg.kind !== "ab") return msg;
-                return {
-                  ...msg,
-                  [which]: {
-                    ...msg[which],
-                    thinking: full,
-                    thinkingActive: true,
-                  },
-                };
-              })
-            );
+            publishAb(which, { thinking: full, thinkingActive: true });
           },
           onDelta: (_chunk, full) => {
-            setMessages((prev) =>
-              prev.map((msg) => {
-                if (msg.id !== abId || msg.kind !== "ab") return msg;
-                return {
-                  ...msg,
-                  [which]: {
-                    ...msg[which],
-                    text: full,
-                    thinkingActive: false,
-                  },
-                };
-              })
-            );
+            publishAb(which, { text: full, thinkingActive: false });
           },
         });
 
         const endIso = nowIso();
         const personalityName =
           which === "a"
-            ? composeSystemPrompt(systemPrompt, personalityA).personalityName
-            : composeSystemPrompt(systemPrompt, personalityB).personalityName;
+            ? composedA.personalityName
+            : composedB.personalityName;
         recordMetric({
           sessionId,
           queryId: `${abId}-${which}`,
@@ -1252,45 +1239,35 @@ export default function Home() {
           reasoningTokens: result.usage?.reasoningTokens ?? null,
           error: result.error || "",
         });
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== abId || msg.kind !== "ab") return msg;
-            return {
-              ...msg,
-              [which]: {
-                ...msg[which],
-                text: result.error
-                  ? msg[which].text || result.error
-                  : result.text || msg[which].text,
-                thinking: result.thinking || msg[which].thinking,
-                thinkingActive: false,
-                latencyMs: result.latencyMs,
-                ttftMs: result.ttftMs,
-                error: result.error,
-                loading: false,
-                label: result.meta?.label || msg[which].label,
-                model: result.meta?.model || msg[which].model,
-                timing: {
-                  startIso,
-                  endIso,
-                  durationMs:
-                    result.latencyMs ??
-                    Date.now() - new Date(startIso).getTime(),
-                  ttftMs: result.ttftMs,
-                  answerTtftMs: result.answerTtftMs,
-                },
-              },
-            };
-          })
-        );
+        publishAb(which, {
+          text: result.error
+            ? abDraft[which].text || result.error
+            : result.text || abDraft[which].text,
+          thinking: result.thinking || abDraft[which].thinking,
+          thinkingActive: false,
+          latencyMs: result.latencyMs,
+          ttftMs: result.ttftMs,
+          error: result.error,
+          loading: false,
+          label: result.meta?.label || abDraft[which].label,
+          model: result.meta?.model || abDraft[which].model,
+          timing: {
+            startIso,
+            endIso,
+            durationMs:
+              result.latencyMs ?? Date.now() - new Date(startIso).getTime(),
+            ttftMs: result.ttftMs,
+            answerTtftMs: result.answerTtftMs,
+          },
+        });
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
         const message = err instanceof Error ? err.message : String(err);
         const endIso = nowIso();
         const personalityName =
           which === "a"
-            ? composeSystemPrompt(systemPrompt, personalityA).personalityName
-            : composeSystemPrompt(systemPrompt, personalityB).personalityName;
+            ? composedA.personalityName
+            : composedB.personalityName;
         recordMetric({
           sessionId,
           queryId: `${abId}-${which}`,
@@ -1314,25 +1291,16 @@ export default function Home() {
           reasoningTokens: null,
           error: message,
         });
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== abId || msg.kind !== "ab") return msg;
-            return {
-              ...msg,
-              [which]: {
-                ...msg[which],
-                error: message,
-                loading: false,
-                thinkingActive: false,
-                timing: {
-                  startIso,
-                  endIso,
-                  durationMs: Date.now() - new Date(startIso).getTime(),
-                },
-              },
-            };
-          })
-        );
+        publishAb(which, {
+          error: message,
+          loading: false,
+          thinkingActive: false,
+          timing: {
+            startIso,
+            endIso,
+            durationMs: Date.now() - new Date(startIso).getTime(),
+          },
+        });
       }
     };
 

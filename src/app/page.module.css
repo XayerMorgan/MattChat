@@ -491,8 +491,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.9rem;
-  align-items: stretch;
+  align-items: start; /* don't stretch columns into each other */
   width: 100%;
+  isolation: isolate;
 }
 
 /* Each pane is an isolated column: header | scrollable answer | copy + buttons */
@@ -505,18 +506,20 @@
   min-height: 280px;
   min-width: 0; /* critical: keep grid children inside their column */
   max-width: 100%;
+  width: 100%;
   box-shadow: var(--shadow);
   overflow: hidden;
+  position: relative;
+  z-index: 0;
+  contain: layout style; /* stop overflow painting into the other column */
 }
 
 .abPaneA {
   border-top: 3px solid var(--a);
-  grid-column: 1;
 }
 
 .abPaneB {
   border-top: 3px solid var(--b);
-  grid-column: 2;
 }
 
 .abHeader {
@@ -843,11 +846,6 @@
   }
 
   .abGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .abPaneA,
-  .abPaneB {
-    grid-column: auto;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
