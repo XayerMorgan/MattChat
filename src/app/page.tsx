@@ -107,6 +107,32 @@ type AbHistoryItem = {
   winner: "a" | "b" | "tie";
 };
 
+/** Ensure every history row has a unique id (localStorage may hold old dupes). */
+function sanitizeHistory(items: AbHistoryItem[]): AbHistoryItem[] {
+  const seen = new Set<string>();
+  const out: AbHistoryItem[] = [];
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") continue;
+    let id = String(raw.id || "");
+    if (!id || seen.has(id)) {
+      id = `hist-${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${out.length}`;
+    }
+    seen.add(id);
+    out.push({
+      id,
+      at: String(raw.at || new Date().toISOString()),
+      prompt: String(raw.prompt || ""),
+      aLabel: String(raw.aLabel || "A"),
+      bLabel: String(raw.bLabel || "B"),
+      winner:
+        raw.winner === "a" || raw.winner === "b" || raw.winner === "tie"
+          ? raw.winner
+          : "tie",
+    });
+  }
+  return out.slice(0, 30);
+}
+
 type ModelRow = { id: string; loaded?: boolean };
 
 type SourceRuntime = {
@@ -253,7 +279,9 @@ export default function Home() {
         if (typeof parsed.fastMode === "boolean") setFastMode(parsed.fastMode);
         // Mode is intentionally NOT restored — Single is always the default.
         setMode("single");
-        if (Array.isArray(parsed.history)) setHistory(parsed.history);
+        if (Array.isArray(parsed.history)) {
+          setHistory(sanitizeHistory(parsed.history as AbHistoryItem[]));
+        }
       }
     } catch {
       /* ignore corrupt storage */
@@ -839,9 +867,11 @@ export default function Home() {
           winner,
         };
         setHistory((h) => {
-          // Replace prior vote for this same A/B message instead of stacking dupes
-          const without = h.filter((x) => !x.id.startsWith(`${msgId}-`) && x.id !== msgId);
-          return [entry, ...without].slice(0, 30);
+          // Drop prior votes for this A/B turn (old plain msgId or msgId-*)
+          const without = h.filter(
+            (x) => x.id !== msgId && !x.id.startsWith(`${msgId}-`)
+          );
+          return sanitizeHistory([entry, ...without]);
         });
       }
       return next;
@@ -1772,8 +1802,11 @@ export default function Home() {
               </button>
             </div>
             <div className={styles.history}>
-              {history.slice(0, 6).map((h) => (
-                <div key={h.id} className={styles.historyItem}>
+              {history.slice(0, 6).map((h, i) => (
+                <div
+                  key={`${h.id}__${h.at}__${i}`}
+                  className={styles.historyItem}
+                >
                   <strong>
                     {h.winner === "tie"
                       ? "Tie"
