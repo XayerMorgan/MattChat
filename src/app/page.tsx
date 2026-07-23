@@ -829,19 +829,20 @@ export default function Home() {
       );
       const msg = next.find((m) => m.id === msgId);
       if (msg?.kind === "ab") {
-        setHistory((h) =>
-          [
-            {
-              id: msgId,
-              at: new Date().toISOString(),
-              prompt: msg.prompt,
-              aLabel: msg.a.label || sourceLabel(sourceA.provider, sourceA.model),
-              bLabel: msg.b.label || sourceLabel(sourceB.provider, sourceB.model),
-              winner,
-            },
-            ...h,
-          ].slice(0, 30)
-        );
+        const entry: AbHistoryItem = {
+          // Unique React key even if the same A/B turn is re-judged
+          id: `${msgId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          at: new Date().toISOString(),
+          prompt: msg.prompt,
+          aLabel: msg.a.label || sourceLabel(sourceA.provider, sourceA.model),
+          bLabel: msg.b.label || sourceLabel(sourceB.provider, sourceB.model),
+          winner,
+        };
+        setHistory((h) => {
+          // Replace prior vote for this same A/B message instead of stacking dupes
+          const without = h.filter((x) => !x.id.startsWith(`${msgId}-`) && x.id !== msgId);
+          return [entry, ...without].slice(0, 30);
+        });
       }
       return next;
     });
