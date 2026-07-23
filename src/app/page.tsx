@@ -1941,10 +1941,10 @@ export default function Home() {
                   );
                 }
                 if (m.kind === "assistant") {
-                  const outText =
-                    m.content ||
-                    (busy && !m.thinking ? "…" : "") ||
-                    (m.thinking && !m.content && !busy ? "" : "");
+                  const streaming =
+                    busy &&
+                    !m.timing?.endIso &&
+                    Boolean(m.thinkingActive || !m.content?.trim());
                   return (
                     <div key={m.id} className={styles.bubble}>
                       {m.sourceLabel && (
@@ -1957,34 +1957,50 @@ export default function Home() {
                         active={Boolean(m.thinkingActive)}
                         defaultOpen={Boolean(m.thinkingActive)}
                       />
-                      {outText}
+                      {/* Single mode: one full-width output/copy box */}
+                      <CopyBox
+                        text={
+                          m.content ||
+                          (streaming && m.thinkingActive ? "" : m.content)
+                        }
+                        label="Output"
+                        large
+                        streaming={Boolean(streaming)}
+                        placeholder={
+                          m.thinkingActive
+                            ? "Model is thinking…"
+                            : streaming
+                              ? "Streaming…"
+                              : "No output yet"
+                        }
+                      />
                       <TimingStrip timing={m.timing} />
-                      {m.content?.trim() ? (
-                        <CopyBox text={m.content} label="Copy output" />
-                      ) : null}
                     </div>
                   );
                 }
 
                 const renderAbColumn = (side: "a" | "b") => {
                   const pane = m[side];
-                  const answer = (pane.text || "").trim();
                   return (
-                    <div
-                      key={`${m.id}-pane-${side}`}
+                    <section
+                      key={`${m.id}-col-${side}`}
                       className={`${styles.abPane} ${
                         side === "a" ? styles.abPaneA : styles.abPaneB
                       }`}
+                      aria-label={`Side ${side.toUpperCase()}`}
                     >
                       <div className={styles.abHeader}>
                         <div>
                           <strong>
-                            {side.toUpperCase()}: {pane.label}
+                            Side {side.toUpperCase()}
                           </strong>
                           <div className={styles.metrics}>
                             <span className={styles.metric}>
                               {shortModel(pane.model)}
                             </span>
+                          </div>
+                          <div className={styles.metrics}>
+                            <span className={styles.metric}>{pane.label}</span>
                           </div>
                         </div>
                         <div className={styles.metrics}>
@@ -1997,77 +2013,71 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <div
-                        className={`${styles.abBody} ${
-                          pane.error ? styles.abBodyError : ""
-                        }`}
-                      >
+                      <div className={styles.abBody}>
                         {pane.error ? (
-                          <div className={styles.abAnswer}>{pane.error}</div>
+                          <div className={styles.abBodyError}>{pane.error}</div>
                         ) : (
-                          <>
-                            <ThinkingBlock
-                              thinking={pane.thinking || ""}
-                              active={Boolean(pane.thinkingActive)}
-                              defaultOpen={Boolean(pane.thinkingActive)}
-                            />
-                            <div className={styles.abAnswer}>
-                              {pane.text ? (
-                                pane.text
-                              ) : pane.loading ? (
-                                <span className={styles.streaming}>
-                                  {pane.thinkingActive
-                                    ? "Model is thinking…"
-                                    : "Streaming…"}
-                                </span>
-                              ) : (
-                                ""
-                              )}
-                            </div>
-                            <TimingStrip timing={pane.timing} />
-                          </>
+                          <ThinkingBlock
+                            thinking={pane.thinking || ""}
+                            active={Boolean(pane.thinkingActive)}
+                            defaultOpen={Boolean(pane.thinkingActive)}
+                          />
+                        )}
+                        <TimingStrip timing={pane.timing} />
+                      </div>
+
+                      {/* THE output for this side — always in this column */}
+                      <div className={styles.abOutput}>
+                        {pane.error ? (
+                          <CopyBox
+                            text={pane.error}
+                            label={`${side.toUpperCase()} error`}
+                          />
+                        ) : (
+                          <CopyBox
+                            text={pane.text || ""}
+                            label={`${side.toUpperCase()} output`}
+                            streaming={Boolean(pane.loading)}
+                            placeholder={
+                              pane.thinkingActive
+                                ? "Thinking…"
+                                : pane.loading
+                                  ? "Streaming…"
+                                  : "No output yet"
+                            }
+                          />
                         )}
                       </div>
 
-                      <div className={styles.abBottom}>
-                        {!pane.error && answer ? (
-                          <CopyBox
-                            text={pane.text}
-                            label={`Copy ${side.toUpperCase()}`}
-                          />
-                        ) : (
-                          <div className={styles.abCopyPlaceholder} />
-                        )}
-                        <div className={styles.abFooter}>
+                      <div className={styles.abFooter}>
+                        <button
+                          type="button"
+                          className={`${styles.pickBtn} ${
+                            m.winner === side
+                              ? side === "a"
+                                ? styles.activeA
+                                : styles.activeB
+                              : ""
+                          }`}
+                          disabled={pane.loading || !!pane.error}
+                          onClick={() => setWinner(m.id, side)}
+                        >
+                          Winner {side.toUpperCase()}
+                        </button>
+                        {side === "b" && (
                           <button
                             type="button"
                             className={`${styles.pickBtn} ${
-                              m.winner === side
-                                ? side === "a"
-                                  ? styles.activeA
-                                  : styles.activeB
-                                : ""
+                              m.winner === "tie" ? styles.activeA : ""
                             }`}
-                            disabled={pane.loading || !!pane.error}
-                            onClick={() => setWinner(m.id, side)}
+                            disabled={m.a.loading || m.b.loading}
+                            onClick={() => setWinner(m.id, "tie")}
                           >
-                            Winner {side.toUpperCase()}
+                            Tie
                           </button>
-                          {side === "b" && (
-                            <button
-                              type="button"
-                              className={`${styles.pickBtn} ${
-                                m.winner === "tie" ? styles.activeA : ""
-                              }`}
-                              disabled={m.a.loading || m.b.loading}
-                              onClick={() => setWinner(m.id, "tie")}
-                            >
-                              Tie
-                            </button>
-                          )}
-                        </div>
+                        )}
                       </div>
-                    </div>
+                    </section>
                   );
                 };
 

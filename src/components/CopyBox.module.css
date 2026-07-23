@@ -3,10 +3,17 @@
   border: 1px solid var(--border, #273044);
   border-radius: 12px;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, 0.28);
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.large {
+  margin-top: 0.65rem;
 }
 
 .bar {
@@ -14,17 +21,25 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.35rem 0.55rem;
+  padding: 0.4rem 0.6rem;
   border-bottom: 1px solid var(--border, #273044);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
+  flex-shrink: 0;
 }
 
 .label {
-  font-size: 0.68rem;
-  font-weight: 700;
+  font-size: 0.7rem;
+  font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-dim, #6b7386);
+  color: var(--text-muted, #939caf);
+}
+
+.live {
+  color: #7aa2ff;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .copyBtn {
@@ -32,10 +47,11 @@
   background: transparent;
   color: var(--text-muted, #939caf);
   border-radius: 8px;
-  padding: 0.22rem 0.55rem;
-  font-size: 0.7rem;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .copyBtn:hover:not(:disabled) {
@@ -57,14 +73,29 @@
 
 .box {
   margin: 0;
-  padding: 0.65rem 0.75rem;
-  max-height: 220px;
+  padding: 0.7rem 0.8rem;
+  min-height: 100px;
+  max-height: 280px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   line-height: 1.45;
   color: var(--text, #eef2f8);
   user-select: text;
+  flex: 1;
+}
+
+.large .box {
+  min-height: 140px;
+  max-height: 420px;
+  font-size: 0.86rem;
+}
+
+.boxEmpty {
+  color: var(--text-dim, #6b7386);
+  font-style: italic;
+  font-family: inherit;
 }
