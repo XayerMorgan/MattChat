@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import fs from "fs";
 import {
   deleteKey,
+  getKeyStorePath,
+  getKeyStoreRelativePath,
   listKeySlotsPublic,
   upsertKey,
   type KeySlotId,
@@ -11,9 +14,26 @@ export const dynamic = "force-dynamic";
 
 /** List key slots with masked secrets only */
 export async function GET() {
+  const storePath = getKeyStorePath();
+  const exists = fs.existsSync(storePath);
+  let updatedAt: string | undefined;
+  if (exists) {
+    try {
+      updatedAt = fs.statSync(storePath).mtime.toISOString();
+    } catch {
+      /* ignore */
+    }
+  }
   return NextResponse.json({
     ok: true,
     slots: listKeySlotsPublic(),
+    storage: {
+      relativePath: getKeyStoreRelativePath(),
+      exists,
+      updatedAt,
+      gitignored: true,
+      note: "Keys and base URLs are saved on this machine only and are not committed to git.",
+    },
   });
 }
 

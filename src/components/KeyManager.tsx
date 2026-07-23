@@ -23,38 +23,52 @@ type Draft = {
   apiKey: string;
   baseUrl: string;
   label: string;
+  dirty?: boolean;
+};
+
+type StorageInfo = {
+  relativePath: string;
+  exists: boolean;
+  updatedAt?: string;
+  gitignored: boolean;
+  note: string;
 };
 
 export function KeyManager() {
   const [open, setOpen] = useState(false);
   const [slots, setSlots] = useState<KeySlotPublic[]>([]);
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [status, setStatus] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [globalMsg, setGlobalMsg] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/keys");
+      const res = await fetch("/api/keys", { cache: "no-store" });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to load keys");
+      if (!res.ok) throw new Error(json.error || "Failed to load config");
       const list = (json.slots || []) as KeySlotPublic[];
       setSlots(list);
+      if (json.storage) setStorage(json.storage as StorageInfo);
       setDrafts((prev) => {
         const next = { ...prev };
         for (const s of list) {
-          if (!next[s.id]) {
+          const keepDirty = next[s.id]?.dirty && next[s.id]?.apiKey;
+          if (!next[s.id] || !keepDirty) {
             next[s.id] = {
               apiKey: "",
               baseUrl: s.baseUrl || s.defaultBaseUrl || "",
               label: s.label || "",
+              dirty: false,
             };
-          } else {
-            // Keep typed secret; refresh base from server if draft empty
-            if (!next[s.id].baseUrl) {
-              next[s.id].baseUrl = s.baseUrl || s.defaultBaseUrl || "";
-            }
+          } else if (!next[s.id].baseUrl) {
+            next[s.id] = {
+              ...next[s.id],
+              baseUrl: s.baseUrl || s.defaultBaseUrl || "",
+            };
           }
         }
         return next;
@@ -68,6 +82,11 @@ export function KeyManager() {
     }
   }, []);
 
+  // Badge count even when collapsed
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   useEffect(() => {
     if (open) void load();
   }, [open, load]);
@@ -75,7 +94,11 @@ export function KeyManager() {
   const setDraft = (id: string, patch: Partial<Draft>) => {
     setDrafts((d) => ({
       ...d,
-      [id]: { ...(d[id] || { apiKey: "", baseUrl: "", label: "" }), ...patch },
+      [id]: {
+        ...(d[id] || { apiKey: "", baseUrl: "", label: "", dirty: false }),
+        ...patch,
+        dirty: true,
+      },
     }));
   };
 
@@ -99,27 +122,69 @@ export function KeyManager() {
       if (!res.ok) throw new Error(json.error || "Save failed");
       setDrafts((d) => ({
         ...d,
-        [id]: { ...d[id], apiKey: "" }, // never keep plaintext after save
+        [id]: {
+          apiKey: "",
+          baseUrl: d[id]?.baseUrl || "",
+          label: d[id]?.label || "",
+          dirty: false,
+        },
       }));
       await load();
-      setStatus((s) => ({ ...s, [id]: "Saved (stored server-side only)" }));
+      setStatus((s) => ({
+        ...s,
+        [id]: opts?.clearKey
+          ? "Key cleared (file updated)"
+          : "Saved on this machine (gitignored)",
+      }));
     } catch (err) {
       setStatus((s) => ({
         ...s,
         [id]: err instanceof Error ? err.message : String(err),
       }));
+      throw err;
     } finally {
       setBusyId(null);
     }
+  };
+
+  const saveAll = async () => {
+    setGlobalMsg("Saving all providers…");
+    const ids = Object.keys(drafts).filter(
+      (id) =>
+        drafts[id]?.dirty ||
+        drafts[id]?.apiKey?.trim() ||
+        drafts[id]?.baseUrl?.trim()
+    );
+    if (!ids.length) {
+      // Still persist current base URLs for all visible slots
+      for (const s of slots) {
+        try {
+          await save(s.id);
+        } catch {
+          /* per-slot status set */
+        }
+      }
+      setGlobalMsg("Saved current fields for all providers.");
+      return;
+    }
+    let ok = 0;
+    for (const id of ids.length ? ids : slots.map((s) => s.id)) {
+      try {
+        await save(id);
+        ok += 1;
+      } catch {
+        /* continue */
+      }
+    }
+    setGlobalMsg(`Saved ${ok} provider(s) to ${storage?.relativePath || "config/api-keys.json"}.`);
   };
 
   const test = async (id: string) => {
     setBusyId(id);
     setStatus((s) => ({ ...s, [id]: "Testing…" }));
     try {
-      // Save first if user typed a new key so test uses it
       const draft = drafts[id];
-      if (draft?.apiKey?.trim()) {
+      if (draft?.apiKey?.trim() || draft?.dirty) {
         await save(id);
       }
       const res = await fetch("/api/keys/test", {
@@ -145,6 +210,7 @@ export function KeyManager() {
   };
 
   const configuredCount = slots.filter((s) => s.configured).length;
+  const dirtyCount = Object.values(drafts).filter((d) => d.dirty).length;
 
   return (
     <div className={styles.wrap}>
@@ -152,23 +218,58 @@ export function KeyManager() {
         type="button"
         className={styles.headerBtn}
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
       >
-        <span>API keys</span>
+        <span>API &amp; config</span>
         <span className={styles.badge}>
-          {slots.length
-            ? `${configuredCount}/${slots.length}`
-            : "…"}
+          {slots.length ? `${configuredCount}/${slots.length}` : "…"}
+          {dirtyCount > 0 ? ` · ${dirtyCount} unsaved` : ""}
         </span>
         <span className={styles.chev}>{open ? "▾" : "▸"}</span>
       </button>
 
       {open && (
         <div className={styles.panel}>
-          <p className={styles.intro}>
-            Keys are stored in <code>config/api-keys.json</code> on this machine
-            (gitignored). Env vars override file. Secrets never appear in full
-            after save.
-          </p>
+          <div className={styles.intro}>
+            <p>
+              Manage provider API keys and base URLs. Values are saved on{" "}
+              <strong>this machine only</strong> and are{" "}
+              <strong>gitignored</strong> — they never go to GitHub.
+            </p>
+            <p className={styles.storeLine}>
+              Store:{" "}
+              <code>{storage?.relativePath || "config/api-keys.json"}</code>
+              {storage?.exists
+                ? storage.updatedAt
+                  ? ` · updated ${new Date(storage.updatedAt).toLocaleString()}`
+                  : " · present"
+                : " · not created yet (save once)"}
+            </p>
+            <p className={styles.storeLine}>
+              Priority: <code>.env.local</code> (if set) overrides the file.
+              Env files are also gitignored.
+            </p>
+          </div>
+
+          <div className={styles.toolbar}>
+            <button
+              type="button"
+              className={styles.primary}
+              disabled={loading || busyId !== null}
+              onClick={() => void saveAll()}
+            >
+              Save all
+            </button>
+            <button
+              type="button"
+              className={styles.secondary}
+              disabled={loading || busyId !== null}
+              onClick={() => void load()}
+            >
+              Reload
+            </button>
+          </div>
+          {globalMsg && <p className={styles.msg}>{globalMsg}</p>}
 
           {loading && !slots.length && (
             <p className={styles.msg}>Loading…</p>
@@ -184,10 +285,18 @@ export function KeyManager() {
             const busy = busyId === slot.id;
 
             return (
-              <div key={slot.id} className={styles.card}>
+              <div
+                key={slot.id}
+                className={`${styles.card} ${draft.dirty ? styles.cardDirty : ""}`}
+              >
                 <div className={styles.cardHead}>
                   <div>
-                    <div className={styles.name}>{slot.name}</div>
+                    <div className={styles.name}>
+                      {slot.name}
+                      {draft.dirty ? (
+                        <span className={styles.unsaved}> · unsaved</span>
+                      ) : null}
+                    </div>
                     <div className={styles.desc}>{slot.description}</div>
                   </div>
                   <span
@@ -207,7 +316,8 @@ export function KeyManager() {
 
                 {slot.maskedKey && (
                   <div className={styles.masked}>
-                    Active: <code>{slot.maskedKey}</code>
+                    Active key: <code>{slot.maskedKey}</code>
+                    {slot.source === "env" ? " (from environment)" : ""}
                   </div>
                 )}
 
@@ -301,7 +411,8 @@ export function KeyManager() {
                     className={
                       status[slot.id].startsWith("✓")
                         ? styles.ok
-                        : status[slot.id].startsWith("✗")
+                        : status[slot.id].startsWith("✗") ||
+                            status[slot.id].toLowerCase().includes("fail")
                           ? styles.err
                           : styles.msg
                     }

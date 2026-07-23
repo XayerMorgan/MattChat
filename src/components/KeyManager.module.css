@@ -56,12 +56,30 @@
   margin: 0;
   font-size: 0.72rem;
   color: var(--text-dim, #6b7386);
-  line-height: 1.4;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.intro p {
+  margin: 0;
 }
 
 .intro code {
   font-size: 0.68rem;
   color: var(--text-muted, #939caf);
+}
+
+.storeLine {
+  font-size: 0.68rem;
+  color: var(--text-dim, #6b7386);
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
 .card {
@@ -72,6 +90,17 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+
+.cardDirty {
+  border-color: rgba(122, 162, 255, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(122, 162, 255, 0.12);
+}
+
+.unsaved {
+  color: #7aa2ff;
+  font-weight: 600;
+  font-size: 0.72rem;
 }
 
 .cardHead {

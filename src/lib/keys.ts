@@ -130,9 +130,39 @@ export type KeySlotPublic = {
 
 const STORE_PATH = path.join(process.cwd(), "config", "api-keys.json");
 
+/** Absolute path to the secrets file (server-only; never send full secrets to client). */
+export function getKeyStorePath(): string {
+  return STORE_PATH;
+}
+
+/** Path relative to project root — safe to show in the UI. */
+export function getKeyStoreRelativePath(): string {
+  return path.join("config", "api-keys.json");
+}
+
 function ensureConfigDir() {
   const dir = path.dirname(STORE_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  // Belt-and-suspenders: keep a local gitignore so secrets never get added
+  const gi = path.join(dir, ".gitignore");
+  if (!fs.existsSync(gi)) {
+    try {
+      fs.writeFileSync(
+        gi,
+        [
+          "# Auto-managed by MattChat — never commit secrets",
+          "api-keys.json",
+          "api-keys.json.tmp",
+          "*.secret.json",
+          "secrets/",
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export function readKeyStore(): KeyStoreFile {

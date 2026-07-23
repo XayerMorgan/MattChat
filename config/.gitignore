@@ -1,0 +1,5 @@
+# Never commit secrets (also listed in repo root .gitignore)
+api-keys.json
+api-keys.json.tmp
+*.secret.json
+secrets/

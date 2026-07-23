@@ -178,9 +178,15 @@ curl -s -o /dev/null -w "%{http_code}\n" http://lmstudio.example.com:1234/v1/mod
 
 ---
 
-## Optional cloud APIs
+## API & config panel
 
-Set in `.env.local` or the in-app **API keys** panel:
+In the sidebar open **API & config**:
+
+- Save API keys + base URLs per provider (LM Studio, xAI, OpenAI, Gemini, …)
+- **Save** / **Save all** / **Test** connectivity
+- Stored on disk at `config/api-keys.json` (**gitignored**, never uploaded)
+
+Optional env overrides (also gitignored via `.env*`):
 
 | Variable | Provider |
 |----------|----------|
@@ -189,7 +195,7 @@ Set in `.env.local` or the in-app **API keys** panel:
 | `GEMINI_API_KEY` | Gemini |
 | `CUSTOM_BASE_URL` | Other OpenAI-compatible servers |
 
-Keys stay on **your** machine (server-side), not in the browser.
+**Priority:** process env → `config/api-keys.json` → built-in defaults (LM Studio only).
 
 ---
 

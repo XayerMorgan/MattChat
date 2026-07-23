@@ -34,9 +34,14 @@ yarn-error.log*
 .env*
 !.env.local.example
 
-# MattChat API key store (never commit secrets)
+# MattChat secrets / local config (never commit)
 /config/api-keys.json
 /config/api-keys.json.tmp
+/config/*.secret.json
+/config/secrets/
+# Local overrides people sometimes create by hand
+.env.local
+.env.*.local
 
 # vercel
 .vercel
