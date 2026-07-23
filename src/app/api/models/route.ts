@@ -12,38 +12,50 @@ export async function POST(request: Request) {
     const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl : undefined;
 
     if (!provider) {
-      return NextResponse.json({ error: "provider is required" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "provider is required" },
+        { status: 400 }
+      );
     }
 
-    const { models, baseURL, defaultModelId } = await listModels({
-      provider,
-      baseUrl,
-    });
+    const { models, baseURL, defaultModelId, listSource, diagnostics } =
+      await listModels({
+        provider,
+        baseUrl,
+      });
+
+    const loadedModels = models.filter((m) => m.loaded).map((m) => m.id);
 
     return NextResponse.json({
       ok: true,
       models: models.map((m) => m.id),
       modelDetails: models,
-      loadedModels: models.filter((m) => m.loaded).map((m) => m.id),
+      loadedModels,
       defaultModelId,
       baseURL,
       count: models.length,
       isLmStudio: provider === "lmstudio",
+      listSource: listSource || null,
+      diagnostics: diagnostics || [],
+      // Explicit signal for the UI
+      hasLoadState: loadedModels.length > 0,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isConn =
-      /ECONNREFUSED|fetch failed|connect|ENOTFOUND|timeout|AbortError/i.test(
+      /ECONNREFUSED|fetch failed|connect|ENOTFOUND|timeout|AbortError|Could not list/i.test(
         message
       );
     return NextResponse.json(
       {
         ok: false,
         error: isConn
-          ? `Cannot reach provider (${message}). For LM Studio: load a model and start Local Server.`
+          ? `Cannot reach provider: ${message}`
           : message,
+        // Keep shape stable so the client can retry without UI collapse
         models: [] as string[],
         modelDetails: [],
+        loadedModels: [] as string[],
         defaultModelId: "",
         count: 0,
         isLmStudio: false,

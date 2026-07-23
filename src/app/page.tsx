@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./page.module.css";
 import {
   PROVIDER_META,
+  describeLmStudioBaseUrl,
   displayModelName,
   isLmStudio,
+  normalizeOpenAIBaseUrl,
   pickBestModel,
   sourceLabel,
   type ChatMessage,
@@ -96,6 +98,10 @@ type SourceRuntime = {
   defaultModelId: string;
   conn: ConnState;
   message: string;
+  /** Server scan notes (resolved URL, native vs openai, loaded ids) */
+  diagnostics?: string[];
+  listSource?: string;
+  hasLoadState?: boolean;
 };
 
 // Bumped: drop stale localStorage that hard-coded qwen/qwen3.5-9b and
@@ -123,6 +129,9 @@ const emptyRuntime = (): SourceRuntime => ({
   defaultModelId: "",
   conn: "idle",
   message: "",
+  diagnostics: [],
+  listSource: "",
+  hasLoadState: false,
 });
 
 function uid() {
@@ -138,6 +147,16 @@ function formatMs(ms?: number | null) {
 function shortModel(id?: string) {
   if (!id) return "no model";
   return displayModelName(id);
+}
+
+/** Controlled <select> value must always match an <option> or React can throw removeChild. */
+function safeSelectValue(
+  options: Array<{ id: string }>,
+  preferred: string | undefined
+): string {
+  if (!options.length) return "";
+  if (preferred && options.some((o) => o.id === preferred)) return preferred;
+  return options[0].id;
 }
 
 export default function Home() {
@@ -266,6 +285,46 @@ export default function Home() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+
+  /**
+   * Keep source.model locked to a ● loaded LM Studio id after Scan.
+   * Prevents the dropdown showing Qwen while state still has a stale Gemma
+   * (chat would then request the wrong model).
+   */
+  useEffect(() => {
+    if (!hydrated) return;
+    const sync = (
+      provider: ProviderId,
+      model: string,
+      runtime: SourceRuntime,
+      setSource: typeof setSourceA
+    ) => {
+      if (!isLmStudio(provider)) return;
+      const loaded = runtime.modelDetails
+        .filter((m) => m.loaded === true)
+        .map((m) => m.id);
+      if (!loaded.length) return;
+      if (model && loaded.includes(model)) return;
+      const next =
+        (runtime.defaultModelId && loaded.includes(runtime.defaultModelId)
+          ? runtime.defaultModelId
+          : loaded[0]) || model;
+      if (!next || next === model) return;
+      setSource((s) => ({ ...s, model: next, label: undefined }));
+    };
+    sync(sourceA.provider, sourceA.model, runtimeA, setSourceA);
+    sync(sourceB.provider, sourceB.model, runtimeB, setSourceB);
+  }, [
+    hydrated,
+    sourceA.provider,
+    sourceA.model,
+    runtimeA.modelDetails,
+    runtimeA.defaultModelId,
+    sourceB.provider,
+    sourceB.model,
+    runtimeB.modelDetails,
+    runtimeB.defaultModelId,
+  ]);
 
   /**
    * One-click speed path: only last few turns + one system message.
@@ -463,6 +522,7 @@ export default function Home() {
   /**
    * Manual only — never auto-called on load, poll, or send.
    * Chat uses /api/chat only (one request per Send).
+   * On failure we keep the previous catalog so the Scan control stays usable.
    */
   const fetchModels = useCallback(async (which: "a" | "b") => {
     if (busyRef.current) {
@@ -474,7 +534,7 @@ export default function Home() {
 
     setRuntime(which, {
       conn: "loading",
-      message: "Manual catalog scan…",
+      message: "Scanning models…",
     });
 
     try {
@@ -486,61 +546,155 @@ export default function Home() {
           baseUrl: source.baseUrl || undefined,
         }),
       });
-      const json = await res.json();
+
+      let json: {
+        ok?: boolean;
+        error?: string;
+        models?: string[];
+        defaultModelId?: string;
+        modelDetails?: Array<{ id: string; loaded?: boolean }>;
+        loadedModels?: string[];
+        baseURL?: string;
+        listSource?: string;
+        diagnostics?: string[];
+        hasLoadState?: boolean;
+      } = {};
+      try {
+        json = await res.json();
+      } catch {
+        throw new Error(
+          `Scan failed (${res.status}) — non-JSON response from /api/models`
+        );
+      }
+
+      if (!res.ok || json.ok === false) {
+        // Preserve prior models/details so the Scan/Retry button never
+        // disappears when the catalog layout collapses.
+        setRuntime(which, {
+          conn: "error",
+          message: json.error || `Failed to list models (${res.status})`,
+          diagnostics: Array.isArray(json.diagnostics) ? json.diagnostics : [],
+        });
+        setStatus(
+          `${which.toUpperCase()} scan failed — fix Base URL / key, then Retry`
+        );
+        return;
+      }
+
       const models = (json.models as string[]) || [];
       const defaultModelId =
         typeof json.defaultModelId === "string" ? json.defaultModelId : "";
       const modelDetails: ModelRow[] = Array.isArray(json.modelDetails)
         ? json.modelDetails.map((m: { id: string; loaded?: boolean }) => ({
             id: m.id,
-            loaded: Boolean(m.loaded),
+            // loaded may be undefined for remote OpenAI-compat hosts
+            loaded:
+              typeof m.loaded === "boolean" ? m.loaded : undefined,
           }))
         : models.map((id: string) => ({ id }));
 
-      if (!res.ok || json.ok === false) {
-        setRuntime(which, {
-          models: [],
-          modelDetails: [],
-          defaultModelId: "",
-          conn: "error",
-          message: json.error || "Failed to list models",
-        });
-        return;
-      }
-
       const loadedModels = modelDetails
-        .filter((m) => m.loaded)
+        .filter((m) => m.loaded === true)
         .map((m) => m.id);
-      const selected = pickBestModel({
+      const serverLoaded = Array.isArray(json.loadedModels)
+        ? json.loadedModels
+        : [];
+      const loadedUnion = Array.from(
+        new Set([...loadedModels, ...serverLoaded])
+      );
+      const diagnostics = Array.isArray(json.diagnostics)
+        ? json.diagnostics
+        : [];
+      const listSource =
+        typeof json.listSource === "string" ? json.listSource : "";
+
+      // LM Studio hard rule: if anything is ● loaded, selection MUST be one of
+      // those ids. Never keep a stale catalog pick (e.g. Gemma) over loaded Qwen.
+      let selected = pickBestModel({
         provider: source.provider,
         models,
         defaultModelId,
         current: source.model,
-        loadedModels,
+        loadedModels: loadedUnion,
       });
+      if (isLmStudio(source.provider) && loadedUnion.length > 0) {
+        if (!loadedUnion.includes(selected)) {
+          selected =
+            (defaultModelId && loadedUnion.includes(defaultModelId)
+              ? defaultModelId
+              : loadedUnion[0]) || selected;
+        }
+      } else if (
+        isLmStudio(source.provider) &&
+        !loadedUnion.length &&
+        defaultModelId
+      ) {
+        // Remote catalog-only: prefer server default (often first = active),
+        // then fuzzy-match current against catalog (qwen3.6-27b etc.).
+        const fuzzy = models.find(
+          (id) =>
+            id === source.model ||
+            id.toLowerCase().includes((source.model || "").toLowerCase()) ||
+            (source.model || "").toLowerCase().includes(id.toLowerCase())
+        );
+        selected = defaultModelId || fuzzy || selected || models[0] || "";
+      }
 
-      const loadedCount = modelDetails.filter((m) => m.loaded).length;
+      const loadedCount = loadedUnion.length;
+      const hostNote =
+        typeof json.baseURL === "string" && json.baseURL
+          ? ` · ${json.baseURL}`
+          : "";
       const msg = !models.length
         ? isLmStudio(source.provider)
-          ? "Server reachable, but no models found."
-          : "No models returned"
-        : isLmStudio(source.provider)
-          ? `${models.length} models · ${loadedCount} loaded · ${shortModel(selected)}`
-          : `${models.length} models · ${shortModel(selected)}`;
+          ? `Server reachable, but no models found${hostNote}`
+          : `No models returned${hostNote}`
+        : isLmStudio(source.provider) && loadedCount > 0
+          ? `${models.length} models · ${loadedCount} loaded · ${shortModel(selected)}${hostNote}`
+          : isLmStudio(source.provider)
+            ? `${models.length} models · no ● load state (${listSource || "catalog"})${hostNote} — pick your loaded model`
+            : `${models.length} models · ${shortModel(selected)}${hostNote}`;
 
       const runtime: SourceRuntime = {
         models,
         modelDetails,
-        defaultModelId,
+        defaultModelId:
+          isLmStudio(source.provider) && loadedUnion.length
+            ? loadedUnion.includes(defaultModelId)
+              ? defaultModelId
+              : loadedUnion[0]
+            : defaultModelId,
         conn: models.length || selected ? "ok" : "error",
         message: msg,
+        diagnostics,
+        listSource,
+        hasLoadState: loadedCount > 0,
       };
 
+      const nextBaseUrl =
+        isLmStudio(source.provider) || source.provider === "custom"
+          ? typeof json.baseURL === "string" && json.baseURL
+            ? json.baseURL
+            : undefined
+          : undefined;
+
       if (which === "a") {
-        setSourceA((s) => ({ ...s, model: selected || s.model, label: undefined }));
+        setSourceA((s) => ({
+          ...s,
+          // Always write the resolved selection — never fall back to a stale
+          // Gemma id when Scan found a loaded model.
+          model: selected || s.model,
+          ...(nextBaseUrl ? { baseUrl: nextBaseUrl } : {}),
+          label: undefined,
+        }));
         setRuntimeA(runtime);
       } else {
-        setSourceB((s) => ({ ...s, model: selected || s.model, label: undefined }));
+        setSourceB((s) => ({
+          ...s,
+          model: selected || s.model,
+          ...(nextBaseUrl ? { baseUrl: nextBaseUrl } : {}),
+          label: undefined,
+        }));
         setRuntimeB(runtime);
       }
 
@@ -548,16 +702,17 @@ export default function Home() {
         setStatus(
           `${which.toUpperCase()}: ${sourceLabel(source.provider, selected)}`
         );
+      } else {
+        setStatus(`${which.toUpperCase()}: scan complete — no model selected`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // Keep prior catalog; only flip connection state + message
       setRuntime(which, {
-        models: [],
-        modelDetails: [],
-        defaultModelId: "",
         conn: "error",
         message,
       });
+      setStatus(`${which.toUpperCase()} scan failed — ${message}`);
     }
   }, []);
 
@@ -1060,23 +1215,50 @@ export default function Home() {
             <input
               value={source.baseUrl || ""}
               onChange={(e) => updateSource(which, { baseUrl: e.target.value })}
+              onBlur={() => {
+                if (!source.baseUrl?.trim()) return;
+                if (isLmStudio(source.provider) || source.provider === "custom") {
+                  const n = normalizeOpenAIBaseUrl(source.baseUrl);
+                  if (n && n !== source.baseUrl) {
+                    updateSource(which, { baseUrl: n });
+                  }
+                }
+              }}
               placeholder={
                 source.provider === "lmstudio"
-                  ? "http://127.0.0.1:1234/v1"
+                  ? "http://192.168.x.x:1234/v1"
                   : source.provider === "gemini"
                     ? "https://generativelanguage.googleapis.com/v1beta/openai/"
                     : "https://host/v1"
               }
+              spellCheck={false}
             />
+            {isLocal && (
+              <div className={styles.urlHint}>
+                {(() => {
+                  const d = describeLmStudioBaseUrl(source.baseUrl || "");
+                  return (
+                    <>
+                      <span className={styles.urlNorm}>→ {d.normalized}</span>
+                      {d.tips.slice(0, 2).map((t, i) => (
+                        <span key={`tip-${i}`} className={styles.urlTip}>
+                          {t}
+                        </span>
+                      ))}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         )}
 
         <div className={styles.field}>
-          <label>
-            <span>
+          <div className={styles.fieldLabelRow}>
+            <label htmlFor={`model-${which}`}>
               Model
               {details.length > 0 ? ` (${details.length})` : ""}
-            </span>
+            </label>
             {runtime.defaultModelId && (
               <button
                 type="button"
@@ -1089,21 +1271,42 @@ export default function Home() {
                 Use loaded default
               </button>
             )}
-          </label>
+          </div>
           <div className={styles.row}>
             {details.length > 0 ? (
               <select
+                id={`model-${which}`}
                 className={styles.modelSelect}
-                value={
-                  details.some((m) => m.id === source.model)
-                    ? source.model
-                    : details[0].id
-                }
+                value={(() => {
+                  const loadedIds = details
+                    .filter((m) => m.loaded === true)
+                    .map((m) => m.id);
+                  // Prefer ● loaded when known, but always clamp to a real option id.
+                  let preferred = source.model;
+                  if (isLocal && loadedIds.length > 0) {
+                    if (source.model && loadedIds.includes(source.model)) {
+                      preferred = source.model;
+                    } else if (
+                      runtime.defaultModelId &&
+                      loadedIds.includes(runtime.defaultModelId)
+                    ) {
+                      preferred = runtime.defaultModelId;
+                    } else {
+                      preferred = loadedIds[0];
+                    }
+                  } else if (
+                    runtime.defaultModelId &&
+                    details.some((m) => m.id === runtime.defaultModelId)
+                  ) {
+                    preferred = source.model || runtime.defaultModelId;
+                  }
+                  return safeSelectValue(details, preferred);
+                })()}
                 onChange={(e) => updateSource(which, { model: e.target.value })}
               >
                 {details.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.loaded
+                    {m.loaded === true
                       ? `● ${shortModel(m.id)} (loaded)`
                       : m.loaded === false
                         ? `○ ${shortModel(m.id)}`
@@ -1127,19 +1330,23 @@ export default function Home() {
             )}
             <button
               type="button"
-              className={styles.iconBtn}
+              className={`${styles.iconBtn} ${styles.scanBtn}`}
               onClick={() => void fetchModels(which)}
               disabled={runtime.conn === "loading" || busy}
-              title="Optional: list models once. Not required for chat. Never auto-runs."
+              title="List models from this provider. Always available — retry after errors."
             >
-              {runtime.conn === "loading" ? "…" : "Scan"}
+              {runtime.conn === "loading"
+                ? "Scanning…"
+                : runtime.conn === "error"
+                  ? "Retry"
+                  : "Scan"}
             </button>
           </div>
         </div>
 
         <div className={styles.field}>
-          <label>
-            <span>Personality</span>
+          <div className={styles.fieldLabelRow}>
+            <label htmlFor={`personality-${which}`}>Personality</label>
             <button
               type="button"
               className={styles.linkish}
@@ -1154,9 +1361,13 @@ export default function Home() {
             >
               🎲 Randomize
             </button>
-          </label>
+          </div>
           <select
-            value={personality}
+            id={`personality-${which}`}
+            value={safeSelectValue(
+              PERSONALITIES.map((p) => ({ id: p.id })),
+              personality
+            )}
             onChange={(e) =>
               setPersonality(e.target.value as PersonalityId)
             }
@@ -1167,14 +1378,14 @@ export default function Home() {
               </option>
             ))}
           </select>
-          <p className={styles.hint}>
+          <div className={styles.hint}>
             {PERSONALITIES.find((p) => p.id === personality)?.blurb}
-          </p>
+          </div>
         </div>
 
-        <p className={styles.hint}>
+        <div className={styles.hint}>
           Source id: <strong>{derived}</strong>
-        </p>
+        </div>
 
         <div className={styles.field}>
           <label>
@@ -1210,7 +1421,7 @@ export default function Home() {
           />
         </div>
 
-        <p
+        <div
           className={`${styles.hint} ${
             runtime.conn === "ok"
               ? styles.hintOk
@@ -1223,7 +1434,14 @@ export default function Home() {
             (isLocal
               ? "1 Send = 1 chat stream. Scan is optional."
               : PROVIDER_META[source.provider].description)}
-        </p>
+        </div>
+        {isLocal && runtime.diagnostics && runtime.diagnostics.length > 0 && (
+          <ul className={styles.diagList}>
+            {runtime.diagnostics.map((line, i) => (
+              <li key={`diag-${which}-${i}`}>{line}</li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   };
@@ -1377,14 +1595,20 @@ export default function Home() {
             <button
               type="button"
               className={styles.ghostBtn}
-              disabled={busy}
-              title="Optional catalog list only — does not chat"
+              disabled={busy || runtimeA.conn === "loading" || runtimeB.conn === "loading"}
+              title="List models from active source(s). Safe to retry after errors."
               onClick={() => {
                 void fetchModels("a");
                 if (mode === "ab") void fetchModels("b");
               }}
             >
-              Scan models
+              {runtimeA.conn === "loading" ||
+              (mode === "ab" && runtimeB.conn === "loading")
+                ? "Scanning…"
+                : runtimeA.conn === "error" ||
+                    (mode === "ab" && runtimeB.conn === "error")
+                  ? "Retry scan"
+                  : "Scan models"}
             </button>
             <button type="button" className={styles.ghostBtn} onClick={clearChat}>
               Clear

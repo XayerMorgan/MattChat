@@ -277,6 +277,17 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.fieldLabelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.fieldLabelRow label {
+  margin: 0;
+}
+
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
@@ -330,6 +341,45 @@
 .iconBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Keep Scan/Retry visible even when the model field is narrow or errored */
+.scanBtn {
+  flex: 0 0 auto;
+  min-width: 4.75rem;
+  text-align: center;
+}
+
+.urlHint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.urlNorm {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.urlTip {
+  color: var(--text-dim);
+}
+
+.diagList {
+  margin: 0.15rem 0 0;
+  padding-left: 1rem;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.diagList li {
+  margin: 0.1rem 0;
 }
 
 .hint {

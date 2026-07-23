@@ -20,9 +20,9 @@ export const metadata: Metadata = {
 };
 
 /**
- * Browser extensions (Feedly, Grammarly, Dark Reader, etc.) inject attributes
- * onto <html>/<body> before React hydrates, which triggers noisy hydration
- * mismatch warnings. Strip known extension attrs as early as possible.
+ * One-shot strip of extension attrs on <html>/<body>.
+ * Do NOT use MutationObserver here — mutating the DOM while React hydrates
+ * causes Runtime TypeError: Cannot read properties of null (reading 'removeChild').
  */
 const STRIP_EXTENSION_ATTRS = `
 (function () {
@@ -34,28 +34,20 @@ const STRIP_EXTENSION_ATTRS = `
       var n = el.attributes[i].name;
       if (RE.test(n) || n === "data-feedly-mini") remove.push(n);
     }
-    for (var j = 0; j < remove.length; j++) el.removeAttribute(remove[j]);
+    for (var j = 0; j < remove.length; j++) {
+      try { el.removeAttribute(remove[j]); } catch (e) {}
+    }
   }
   function run() {
-    clean(document.documentElement);
-    clean(document.body);
+    try {
+      clean(document.documentElement);
+      clean(document.body);
+    } catch (e) {}
   }
   run();
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", run);
+    document.addEventListener("DOMContentLoaded", run, { once: true });
   }
-  try {
-    var obs = new MutationObserver(function () { run(); });
-    obs.observe(document.documentElement, { attributes: true, subtree: false });
-    if (document.body) {
-      obs.observe(document.body, { attributes: true, subtree: false });
-    } else {
-      document.addEventListener("DOMContentLoaded", function () {
-        if (document.body) obs.observe(document.body, { attributes: true, subtree: false });
-      });
-    }
-    setTimeout(function () { obs.disconnect(); }, 8000);
-  } catch (e) {}
 })();
 `;
 

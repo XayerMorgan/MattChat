@@ -1,71 +1,140 @@
 # MattChat
 
-Web chat frontend for **LM Studio** and commercial OpenAI-compatible APIs, with **side-by-side A/B testing** of two sources on the same prompt.
+Web chat for **LM Studio** and commercial OpenAI-compatible APIs, with **side-by-side A/B testing**.
 
-## Features
+- Streaming chat + timing (TTFT / total)
+- Single or A/B mode
+- Local or remote LM Studio (`http://host:1234/v1`)
+- Optional cloud providers (xAI / OpenAI / Gemini / custom)
+- Attachments: PDF, DOCX, text, images, audio, video
 
-- **Single chat** against one provider/model
-- **A/B mode**: same prompt → Source A and Source B stream in parallel
-- Providers:
-  - **LM Studio** (local, configurable base URL)
-  - **SpaceXAI / xAI** (`XAI_API_KEY`, default model `grok-4.5`)
-  - **OpenAI** (`OPENAI_API_KEY`)
-  - **Custom** OpenAI-compatible base URL
-- Live streaming, TTFT + total latency metrics
-- Mark A / B / Tie winners (stored in `localStorage`)
-- Model list refresh via each provider’s `/models` endpoint
+> **Not a static HTML page.** You need Node.js and a running MattChat server (or a link to someone else’s).
 
-## Setup
+---
+
+## Quick start
+
+### macOS
 
 ```bash
+git clone https://github.com/<OWNER>/MattChat.git
 cd MattChat
-npm install
-cp .env.local.example .env.local
-# edit .env.local with keys you need
-npm run dev
+chmod +x scripts/*.sh
+./scripts/start-mac.sh
 ```
 
 Open [http://localhost:3010](http://localhost:3010).
 
-MattChat defaults to **port 3010** so it does not collide with apps on 3000. Override anytime with `npm run dev -- --port 3020`.
+### Linux
 
-### Environment
+```bash
+git clone https://github.com/<OWNER>/MattChat.git
+cd MattChat
+chmod +x scripts/*.sh
+./scripts/start-linux.sh
+```
 
-| Variable | Used by |
-|----------|---------|
-| `XAI_API_KEY` | SpaceXAI (xAI) |
-| `OPENAI_API_KEY` | OpenAI (and optional fallback for custom) |
-| `LM_STUDIO_BASE_URL` | Optional default LM Studio URL (`http://127.0.0.1:1234/v1`) |
-| `CUSTOM_API_KEY` | Optional key for custom endpoints |
+### Windows (PowerShell)
 
-Keys stay **server-side** only. Never put them in client code.
+```powershell
+git clone https://github.com/<OWNER>/MattChat.git
+cd MattChat
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # once, if needed
+.\scripts\start-windows.ps1
+```
 
-### LM Studio
+Or double-click `scripts\start-windows.cmd`.
 
-1. Load **one** model in LM Studio (prefer small quants if RAM is tight — e.g. Nemotron Nano **4B**, not Omni 30B).
-2. Start the **Local Server** (default port `1234`).
-3. In the UI, set Source A/B provider to **LM Studio**. Chat pins to whatever is already loaded — MattChat will **not** auto-load another model.
-
-**Important:** requesting an unloaded id used to make LM Studio load a second model (and often hang). The chat API now only talks to models that are already in memory. If the UI still has a stale id, the server remaps to the loaded instance.
-
-**Nemotron:** reasoning is on by default. With Fast mode on, MattChat sends `reasoning_effort: "none"` so replies don’t spend the whole budget on hidden thinking.
-
-### A/B workflow
-
-1. Switch mode to **A/B Test**.
-2. Configure Source A (e.g. LM Studio) and Source B (e.g. SpaceXAI `grok-4.5`).
-3. Send a prompt → both panes stream.
-4. Click **Winner A**, **Winner B**, or **Tie** to log preference locally.
+---
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Development server |
-| `npm run build` | Production build |
-| `npm start` | Production server |
+| OS | Local | LAN (others on network) | Public tunnel |
+|----|--------|-------------------------|---------------|
+| **macOS** | `./scripts/start-mac.sh` | `./scripts/start-mac.sh --public` | `./scripts/start-mac.sh --share` |
+| **Linux** | `./scripts/start-linux.sh` | `./scripts/start-linux.sh --public` | `./scripts/start-linux.sh --share` |
+| **Windows** | `.\scripts\start-windows.ps1` | `.\scripts\start-windows.ps1 -Public` | `.\scripts\start-windows.ps1 -Share` |
 
-## Notes
+npm equivalents:
 
-- Conversation history in single mode is multi-turn. A/B turns send the shared transcript + the new user message to both sources; prior A/B assistant outputs are not injected as “the” assistant reply (avoids polluting both sides).
-- For large local models, watch RAM/VRAM; LM Studio may refuse loads that would freeze the machine.
+```bash
+npm install
+npm run dev           # localhost:3010
+npm run dev:public    # 0.0.0.0:3010 (LAN)
+npm run share         # localtunnel (server must already be running)
+npm run build && npm start
+```
+
+Health check (macOS/Linux):
+
+```bash
+./scripts/check-env.sh
+```
+
+---
+
+## Connect LM Studio
+
+1. Load a model in LM Studio and **start Local Server** (port `1234`).
+2. In MattChat → Provider **LM Studio** → Base URL:
+
+| Where is LM Studio? | Base URL |
+|---------------------|----------|
+| Same computer | `http://127.0.0.1:1234/v1` |
+| Another machine / campus | `http://HOSTNAME_OR_IP:1234/v1` |
+| Example campus host | `http://vpit-llm2.jck.txstate.edu:1234/v1` |
+
+3. Click **Scan**, select the **● loaded** model, send a message.
+
+Optional default in `.env.local`:
+
+```bash
+cp .env.local.example .env.local
+# edit LM_STUDIO_BASE_URL=...
+```
+
+Full LM Studio notes (network, firewall, ● loaded detection): see [SETUP.md](./SETUP.md).
+
+---
+
+## Share with a buddy
+
+| Goal | Do this |
+|------|---------|
+| Friend on same network | Start with `--public` / `-Public`, send `http://YOUR_LAN_IP:3010` |
+| Friend on the internet | Start with `--share` / `-Share`, send the `https://….loca.lt` link |
+| Friend runs their own | They clone this repo and use the start script for their OS |
+
+Copy/paste blurb and security notes: **[BUDDY.md](./BUDDY.md)**  
+Full install & troubleshooting: **[SETUP.md](./SETUP.md)**
+
+---
+
+## Environment (optional)
+
+| Variable | Used by |
+|----------|---------|
+| `LM_STUDIO_BASE_URL` | Default LM Studio OpenAI base (`…/v1`) |
+| `LM_STUDIO_API_KEY` | Usually unused (`lm-studio`) |
+| `XAI_API_KEY` | Grok / SpaceXAI |
+| `OPENAI_API_KEY` | OpenAI |
+| `GEMINI_API_KEY` | Gemini |
+| `CUSTOM_BASE_URL` / `CUSTOM_API_KEY` | Custom OpenAI-compatible host |
+
+Keys can also be saved via the in-app **API keys** panel (`config/api-keys.json`, gitignored).
+
+---
+
+## Docs
+
+| File | Contents |
+|------|----------|
+| [SETUP.md](./SETUP.md) | Install on Mac / Linux / Windows, LM Studio, production |
+| [BUDDY.md](./BUDDY.md) | Share link + buddy testing |
+| [AGENTS.md](./AGENTS.md) | Notes for AI coding agents |
+
+---
+
+## License
+
+Private project unless a LICENSE file is added — check the repository settings.
