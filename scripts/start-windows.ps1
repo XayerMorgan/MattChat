@@ -24,6 +24,8 @@ Set-Location $Root
 
 Write-Host "==> MattChat (Windows)" -ForegroundColor Cyan
 Write-Host "    Project: $Root"
+Write-Host "    Pattern: MattChat runs HERE; LM Studio is usually a shared host"
+Write-Host "             (set LM_STUDIO_BASE_URL in .env.local, e.g. Mac Studio)"
 
 # Node check
 $node = Get-Command node -ErrorAction SilentlyContinue

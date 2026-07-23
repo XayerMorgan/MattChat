@@ -25,6 +25,8 @@ done
 
 echo "==> MattChat (macOS)"
 echo "    Project: $(pwd)"
+echo "    Pattern: MattChat runs HERE; LM Studio is usually a shared host"
+echo "             (set LM_STUDIO_BASE_URL in .env.local, e.g. Mac Studio)"
 
 if ! command -v node >/dev/null 2>&1; then
   echo "ERROR: Node.js not found."

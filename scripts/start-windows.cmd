@@ -26,7 +26,8 @@ if not exist .env.local if exist .env.local.example (
   copy /Y .env.local.example .env.local >nul
 )
 
-echo Starting MattChat on http://localhost:3010
+echo MattChat runs on THIS PC. Point Base URL at the shared Mac Studio LM Studio.
+echo Starting http://localhost:3010
 echo Press Ctrl+C to stop.
 echo.
 call npx next dev --port 3010 --webpack

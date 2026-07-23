@@ -1,71 +1,61 @@
-# MattChat setup (macOS · Linux · Windows)
+# MattChat setup guide
 
-One-page guide to install, run, connect LM Studio, and share with a buddy.
+Install MattChat on **your** computer and connect to a **shared LM Studio** host (e.g. Mac Studio).
 
-## Requirements
+## Architecture
 
-| Tool | Version |
-|------|---------|
-| **Node.js** | **18+** (20 LTS recommended) |
-| **npm** | Comes with Node |
-| **Git** | Optional but recommended |
-| **LM Studio** (or other OpenAI-compatible API) | Optional if you only use cloud keys |
-
-Check:
-
-```bash
-node -v    # v18.x or higher
-npm -v
+```text
+┌─────────────────────┐     ┌─────────────────────┐
+│  Client A (you)     │     │  Client B (buddy)   │
+│  MattChat :3010     │     │  MattChat :3010     │
+│  localhost only     │     │  localhost only     │
+└─────────┬───────────┘     └─────────┬───────────┘
+          │  HTTP OpenAI API          │
+          │  …/v1/chat/completions    │
+          └────────────┬──────────────┘
+                       ▼
+          ┌────────────────────────────┐
+          │  Mac Studio + LM Studio    │
+          │  :1234  (shared for all)   │
+          │  e.g. vpit-llm2.jck…       │
+          └────────────────────────────┘
 ```
+
+- Each person installs Node and runs MattChat **locally**.
+- Everyone uses the **same Base URL** for LM Studio on the Mac Studio.
+- You do **not** need to host MattChat publicly for teammates.
 
 ---
 
-## 1. Get the code
+## Requirements (every client)
 
-```bash
-git clone https://github.com/<OWNER>/MattChat.git
-cd MattChat
-```
+| Tool | Notes |
+|------|--------|
+| **Node.js 18+** | 20 LTS recommended — [nodejs.org](https://nodejs.org) |
+| **npm** | Bundled with Node |
+| **Git** | Or download ZIP of the repo |
+| **Network** | Must reach the Mac Studio on port **1234** (campus LAN/VPN as required) |
 
-Or download the ZIP from GitHub → **Code → Download ZIP** → unzip → open a terminal in that folder.
+You do **not** need LM Studio installed on the client unless you want a private local model.
 
 ---
 
-## 2. Start (pick your OS)
+## Install Node
 
 ### macOS
 
-```bash
-chmod +x scripts/start-mac.sh scripts/check-env.sh
-./scripts/start-mac.sh
-```
-
-| Flag | Meaning |
-|------|---------|
-| `./scripts/start-mac.sh` | Local only → http://localhost:3010 |
-| `./scripts/start-mac.sh --public` | LAN: others use `http://YOUR_IP:3010` |
-| `./scripts/start-mac.sh --share` | Temporary public HTTPS tunnel |
-
-Install Node if needed: [nodejs.org](https://nodejs.org) or `brew install node`.
+- Download LTS from [nodejs.org](https://nodejs.org), **or**
+- `brew install node`
 
 ### Linux
 
 ```bash
-chmod +x scripts/start-linux.sh scripts/check-env.sh
-./scripts/start-linux.sh
-```
-
-Same flags as macOS: `--public`, `--share`.
-
-Install Node 20 (examples):
-
-```bash
-# Ubuntu/Debian (NodeSource)
+# Ubuntu / Debian (example — Node 20)
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Fedora
-sudo dnf install nodejs
+sudo dnf install nodejs npm
 
 # Arch
 sudo pacman -S nodejs npm
@@ -73,173 +63,222 @@ sudo pacman -S nodejs npm
 
 ### Windows
 
-**PowerShell (recommended):**
+- Install **LTS** from [nodejs.org](https://nodejs.org) (includes npm), **or**
+- `winget install OpenJS.NodeJS.LTS`
+- **Close and reopen** PowerShell / Terminal after install
+
+Verify:
+
+```bash
+node -v
+npm -v
+```
+
+---
+
+## Get MattChat
+
+```bash
+git clone <THIS_REPO_URL>
+cd MattChat
+```
+
+Or: GitHub → **Code → Download ZIP** → unzip → open a terminal in that folder.
+
+---
+
+## Start MattChat
+
+### macOS
+
+```bash
+chmod +x scripts/*.sh
+./scripts/start-mac.sh
+```
+
+### Linux
+
+```bash
+chmod +x scripts/*.sh
+./scripts/start-linux.sh
+```
+
+### Windows (PowerShell)
 
 ```powershell
-cd MattChat
-# If script is blocked once:
+# If you get an execution policy error (once):
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 .\scripts\start-windows.ps1
-.\scripts\start-windows.ps1 -Public
-.\scripts\start-windows.ps1 -Share
 ```
 
-**Double-click / CMD:**
+### Windows (double-click)
+
+Run:
 
 ```text
 scripts\start-windows.cmd
 ```
 
-Install Node LTS: [nodejs.org](https://nodejs.org) or:
+### What you should see
 
-```powershell
-winget install OpenJS.NodeJS.LTS
+```text
+==> Starting MattChat on http://localhost:3010
 ```
 
-Then **close and reopen** the terminal.
-
----
-
-## 3. Open the app
-
-Browser:
+Open a browser to:
 
 ```text
 http://localhost:3010
 ```
 
-First run installs `node_modules` and creates `.env.local` from `.env.local.example` if missing.
+Stop the server with **Ctrl+C** in the terminal.
+
+First run will:
+
+- run `npm install` (can take a minute)
+- create `.env.local` from `.env.local.example` if missing
 
 ---
 
-## 4. Connect LM Studio
+## Connect to the shared Mac Studio
 
-### A. Local LM Studio (same machine)
+### In the UI
 
-1. Open LM Studio → load a model.
-2. **Developer → Local Server → Start** (port **1234**).
-3. In MattChat: Provider **LM Studio**, Base URL:
+1. **Provider:** LM Studio  
+2. **Base URL:**
 
    ```text
-   http://127.0.0.1:1234/v1
+   http://vpit-llm2.jck.txstate.edu:1234/v1
    ```
 
-4. **Scan** → pick **● loaded** model → **Send**.
+   (Replace with your lab’s hostname/IP if different.)
 
-### B. Remote / campus server
+3. Click **Scan**  
+4. Choose the model marked **● loaded** (or the id of the model loaded on the Studio)  
+5. Type a message → **Send**
 
-Example (Texas State):
+### Default Base URL (so you don’t retype it)
 
-```text
-http://vpit-llm2.jck.txstate.edu:1234/v1
-```
-
-Rules:
-
-- Use **`http://`**, not `https://`
-- Include port **`1234`**
-- Path ends with **`/v1`**
-
-The **machine running MattChat** must reach that host (campus network / VPN).  
-Your buddy’s browser does **not** need VPN if *you* host MattChat on a machine that already can.
-
-Optional default in `.env.local`:
+Edit `.env.local` in the project root:
 
 ```bash
 LM_STUDIO_BASE_URL=http://vpit-llm2.jck.txstate.edu:1234/v1
 ```
 
-### Health check (macOS / Linux)
+Restart MattChat after changing `.env.local`.
+
+### URL rules
+
+| Correct | Incorrect |
+|---------|-----------|
+| `http://vpit-llm2.jck.txstate.edu:1234/v1` | `https://…` (use http) |
+| `http://10.230.32.5:1234/v1` | Missing port |
+| `http://host:1234` (auto-adds `/v1` on blur) | `…/v1/v1` |
+
+---
+
+## Mac Studio admin (one-time / ongoing)
+
+On the **host** machine only:
+
+1. Open **LM Studio**
+2. Load the model the team should use (one primary model is simplest)
+3. **Developer → Local Server → Start Server**
+4. Port **1234**
+5. Turn on **Serve on Local Network**
+6. Firewall: allow inbound **TCP 1234**
+7. Give teammates the Base URL:
+
+   ```text
+   http://<hostname-or-ip>:1234/v1
+   ```
+
+Verify from a client:
 
 ```bash
+# Catalog
+curl -s -o /dev/null -w "%{http_code}\n" \
+  http://vpit-llm2.jck.txstate.edu:1234/v1/models
+
+# Load state (● detection) — optional but nice
+curl -s -o /dev/null -w "%{http_code}\n" \
+  http://vpit-llm2.jck.txstate.edu:1234/api/v0/models
+```
+
+Both should return `200` when healthy. If only `/v1/models` works, Scan still lists models; pick the loaded one by name manually.
+
+Mac/Linux helper from the repo:
+
+```bash
+# After setting LM_STUDIO_BASE_URL in .env.local
 ./scripts/check-env.sh
 ```
 
-Should show `200` for `/v1/models`. Native `/api/v0/models` → `200` enables **● loaded** detection.
-
 ---
 
-## 5. Cloud APIs (optional)
+## Optional: cloud providers
 
-In the UI open **API keys**, or set in `.env.local`:
+Use the **API keys** panel in the UI, or `.env.local`:
 
-| Variable | Provider |
-|----------|----------|
+| Variable | Service |
+|----------|---------|
 | `XAI_API_KEY` | Grok / SpaceXAI |
 | `OPENAI_API_KEY` | OpenAI |
-| `GEMINI_API_KEY` | Gemini |
-| `CUSTOM_BASE_URL` | Any OpenAI-compatible host |
+| `GEMINI_API_KEY` | Google Gemini |
+| `CUSTOM_BASE_URL` + `CUSTOM_API_KEY` | Other OpenAI-compatible APIs |
 
-Keys stay **server-side** (never shipped to the browser as full secrets).
-
----
-
-## 6. Share with a buddy
-
-See **[BUDDY.md](./BUDDY.md)** for the short copy/paste blurb.
-
-| Mode | How |
-|------|-----|
-| Same Wi‑Fi / LAN | `./scripts/start-mac.sh --public` (or Linux/Windows `-Public`) → `http://YOUR_LAN_IP:3010` |
-| Public internet (temporary) | `--share` / `-Share` → send the `https://….loca.lt` URL |
-| Buddy runs their own copy | They clone this repo and run the start script for their OS |
-
-**HTML only does not work** — they need a running MattChat server (yours via link, or their own clone).
+These keys live only on **your** laptop (never committed; `config/api-keys.json` is gitignored).
 
 ---
 
-## 7. Production-style run (optional)
+## npm-only workflow (no shell scripts)
 
 ```bash
+cd MattChat
 npm install
+cp .env.local.example .env.local    # Windows: copy .env.local.example .env.local
+# edit LM_STUDIO_BASE_URL in .env.local
+npm run dev
+```
+
+Production-style on your machine:
+
+```bash
 npm run build
-npm start          # http://0.0.0.0:3010 (see package.json)
-```
-
-Use a process manager (systemd, PM2, NSSM on Windows) if you want it always on.
-
----
-
-## 8. Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| `node: command not found` | Install Node 20 LTS; reopen terminal |
-| Port 3010 in use | `PORT=3020 ./scripts/start-mac.sh` or stop the other process |
-| Scan fails / Offline | LM Studio server running? Correct Base URL? Firewall allow 1234? |
-| Shows Gemma, not Qwen | Check **what is loaded on the remote server** — MattChat reports what LM Studio reports |
-| `removeChild` / blank UI | Hard refresh; try private window (browser extensions) |
-| Windows scripts blocked | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
-| loca.lt password page | Click through; temporary tunnels sometimes ask for your public IP |
-
----
-
-## 9. Project layout (quick)
-
-```text
-MattChat/
-  scripts/
-    start-mac.sh
-    start-linux.sh
-    start-windows.ps1
-    start-windows.cmd
-    check-env.sh
-  src/                 # Next.js app + API routes
-  .env.local.example   # copy → .env.local
-  BUDDY.md             # share / public testing
-  SETUP.md             # this file
-  README.md
+npm start
 ```
 
 ---
 
-## 10. Manual start (no scripts)
+## Troubleshooting
 
-```bash
-npm install
-cp .env.local.example .env.local   # Windows: copy .env.local.example .env.local
-npm run dev                        # localhost only
-npm run dev:public                 # LAN
-npm run share                      # tunnel (server must already be running)
-```
+| Problem | What to try |
+|---------|-------------|
+| `node: command not found` | Install Node 20 LTS; open a **new** terminal |
+| Port 3010 already in use | Quit the other MattChat, or `PORT=3020 ./scripts/start-mac.sh` |
+| Scan fails / Offline | Can you `curl` the Mac Studio `/v1/models`? On VPN/campus? Server started in LM Studio? |
+| Wrong model selected | Load the right model **on the Mac Studio**; Scan again; pick **● loaded** |
+| “Gemma” but you wanted Qwen | Whatever is **loaded in LM Studio on the Studio** is what the API reports — check the host, not only MattChat |
+| Windows “cannot be loaded” | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| Blank page / odd DOM errors | Hard refresh; try a private window (extensions) |
+| Slow first start | First `npm install` downloads packages — wait it out |
+
+---
+
+## Script reference
+
+| File | Platform |
+|------|----------|
+| `scripts/start-mac.sh` | macOS |
+| `scripts/start-linux.sh` | Linux |
+| `scripts/start-windows.ps1` | Windows PowerShell |
+| `scripts/start-windows.cmd` | Windows double-click |
+| `scripts/check-env.sh` | macOS/Linux connectivity check |
+| `scripts/publish-github.sh` | Optional: publish repo with `gh` |
+
+---
+
+## For teammates (one paragraph)
+
+> Clone the MattChat repo, install Node 18+, run the start script for your OS, open http://localhost:3010, set LM Studio Base URL to `http://vpit-llm2.jck.txstate.edu:1234/v1`, click Scan, pick the loaded model, chat. You need campus network access to that host; you do not need LM Studio on your laptop.

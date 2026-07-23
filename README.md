@@ -1,71 +1,117 @@
 # MattChat
 
-Web chat for **LM Studio** and commercial OpenAI-compatible APIs, with **side-by-side A/B testing**.
+Local web chat client for a **shared LM Studio server** (and optional cloud APIs), with side-by-side **A/B testing**.
 
-- Streaming chat + timing (TTFT / total)
-- Single or A/B mode
-- Local or remote LM Studio (`http://host:1234/v1`)
-- Optional cloud providers (xAI / OpenAI / Gemini / custom)
-- Attachments: PDF, DOCX, text, images, audio, video
+## How this is meant to work
 
-> **Not a static HTML page.** You need Node.js and a running MattChat server (or a link to someone else’s).
+```text
+  Your laptop / buddy laptop / any client
+        │
+        │  npm start → http://localhost:3010
+        │  (MattChat runs on EACH machine)
+        ▼
+  MattChat (Next.js on your computer)
+        │
+        │  OpenAI-compatible API
+        ▼
+  Mac Studio (or other host) running LM Studio
+  e.g. http://vpit-llm2.jck.txstate.edu:1234/v1
+```
+
+| Piece | Who runs it | Where |
+|--------|-------------|--------|
+| **MattChat** | Each person | Their own Mac / Linux / Windows PC |
+| **LM Studio** | Lab / host machine | One Mac Studio (shared), port **1234** |
+
+You do **not** share HTML only. Each person clones this repo, runs MattChat locally, and points Base URL at the Mac Studio.
 
 ---
 
-## Quick start
+## Quick start (any client)
 
-### macOS
+### 1. Prerequisites
+
+- **Node.js 18+** (20 LTS recommended) — [nodejs.org](https://nodejs.org)
+- Network path to the LM Studio host (same LAN / campus / VPN)
+- **Git** (or download a ZIP of this repo)
 
 ```bash
-git clone https://github.com/<OWNER>/MattChat.git
+node -v   # should print v18+ or v20+
+```
+
+### 2. Install & run
+
+**macOS**
+
+```bash
+git clone <THIS_REPO_URL>
 cd MattChat
 chmod +x scripts/*.sh
 ./scripts/start-mac.sh
 ```
 
-Open [http://localhost:3010](http://localhost:3010).
-
-### Linux
+**Linux**
 
 ```bash
-git clone https://github.com/<OWNER>/MattChat.git
+git clone <THIS_REPO_URL>
 cd MattChat
 chmod +x scripts/*.sh
 ./scripts/start-linux.sh
 ```
 
-### Windows (PowerShell)
+**Windows (PowerShell)**
 
 ```powershell
-git clone https://github.com/<OWNER>/MattChat.git
+git clone <THIS_REPO_URL>
 cd MattChat
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # once, if needed
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # once if scripts are blocked
 .\scripts\start-windows.ps1
 ```
 
 Or double-click `scripts\start-windows.cmd`.
 
----
+Open: **http://localhost:3010**
 
-## Scripts
+### 3. Point at the shared Mac Studio
 
-| OS | Local | LAN (others on network) | Public tunnel |
-|----|--------|-------------------------|---------------|
-| **macOS** | `./scripts/start-mac.sh` | `./scripts/start-mac.sh --public` | `./scripts/start-mac.sh --share` |
-| **Linux** | `./scripts/start-linux.sh` | `./scripts/start-linux.sh --public` | `./scripts/start-linux.sh --share` |
-| **Windows** | `.\scripts\start-windows.ps1` | `.\scripts\start-windows.ps1 -Public` | `.\scripts\start-windows.ps1 -Share` |
+In MattChat → Source A:
 
-npm equivalents:
+| Field | Value |
+|--------|--------|
+| Provider | **LM Studio** |
+| Base URL | `http://vpit-llm2.jck.txstate.edu:1234/v1` |
+
+Then **Scan** → select the **● loaded** model → **Send**.
+
+To make that the default every time, edit `.env.local` (created on first start):
 
 ```bash
-npm install
-npm run dev           # localhost:3010
-npm run dev:public    # 0.0.0.0:3010 (LAN)
-npm run share         # localtunnel (server must already be running)
-npm run build && npm start
+LM_STUDIO_BASE_URL=http://vpit-llm2.jck.txstate.edu:1234/v1
 ```
 
-Health check (macOS/Linux):
+---
+
+## Start scripts
+
+| OS | Command |
+|----|---------|
+| macOS | `./scripts/start-mac.sh` |
+| Linux | `./scripts/start-linux.sh` |
+| Windows | `.\scripts\start-windows.ps1` or `scripts\start-windows.cmd` |
+
+What the scripts do:
+
+1. Check Node.js version  
+2. `npm install` on first run  
+3. Copy `.env.local.example` → `.env.local` if needed  
+4. Start MattChat on **http://localhost:3010**
+
+Optional flags (Mac/Linux): `--public` bind LAN; `--share` temporary tunnel.  
+Windows: `-Public`, `-Share`.  
+
+**Normal team use does not need those flags** — everyone runs MattChat on `localhost` and only the **Base URL** points at the Mac Studio.
+
+Health check (Mac/Linux):
 
 ```bash
 ./scripts/check-env.sh
@@ -73,68 +119,67 @@ Health check (macOS/Linux):
 
 ---
 
-## Connect LM Studio
+## Mac Studio (LM Studio host) checklist
 
-1. Load a model in LM Studio and **start Local Server** (port `1234`).
-2. In MattChat → Provider **LM Studio** → Base URL:
+Whoever administers the shared box should:
 
-| Where is LM Studio? | Base URL |
-|---------------------|----------|
-| Same computer | `http://127.0.0.1:1234/v1` |
-| Another machine / campus | `http://HOSTNAME_OR_IP:1234/v1` |
-| Example campus host | `http://vpit-llm2.jck.txstate.edu:1234/v1` |
+1. Install and open **LM Studio**
+2. Download / load the model users should chat with
+3. **Developer → Local Server → Start** (port **1234**)
+4. Enable **Serve on Local Network** (or equivalent)
+5. Allow firewall inbound **TCP 1234**
+6. Confirm hostname resolves for clients, e.g.  
+   `http://vpit-llm2.jck.txstate.edu:1234/v1`
 
-3. Click **Scan**, select the **● loaded** model, send a message.
-
-Optional default in `.env.local`:
+From any client machine:
 
 ```bash
-cp .env.local.example .env.local
-# edit LM_STUDIO_BASE_URL=...
+curl -s -o /dev/null -w "%{http_code}\n" http://vpit-llm2.jck.txstate.edu:1234/v1/models
+# expect 200
 ```
-
-Full LM Studio notes (network, firewall, ● loaded detection): see [SETUP.md](./SETUP.md).
-
----
-
-## Share with a buddy
-
-| Goal | Do this |
-|------|---------|
-| Friend on same network | Start with `--public` / `-Public`, send `http://YOUR_LAN_IP:3010` |
-| Friend on the internet | Start with `--share` / `-Share`, send the `https://….loca.lt` link |
-| Friend runs their own | They clone this repo and use the start script for their OS |
-
-Copy/paste blurb and security notes: **[BUDDY.md](./BUDDY.md)**  
-Full install & troubleshooting: **[SETUP.md](./SETUP.md)**
-
----
-
-## Environment (optional)
-
-| Variable | Used by |
-|----------|---------|
-| `LM_STUDIO_BASE_URL` | Default LM Studio OpenAI base (`…/v1`) |
-| `LM_STUDIO_API_KEY` | Usually unused (`lm-studio`) |
-| `XAI_API_KEY` | Grok / SpaceXAI |
-| `OPENAI_API_KEY` | OpenAI |
-| `GEMINI_API_KEY` | Gemini |
-| `CUSTOM_BASE_URL` / `CUSTOM_API_KEY` | Custom OpenAI-compatible host |
-
-Keys can also be saved via the in-app **API keys** panel (`config/api-keys.json`, gitignored).
 
 ---
 
 ## Docs
 
-| File | Contents |
-|------|----------|
-| [SETUP.md](./SETUP.md) | Install on Mac / Linux / Windows, LM Studio, production |
-| [BUDDY.md](./BUDDY.md) | Share link + buddy testing |
-| [AGENTS.md](./AGENTS.md) | Notes for AI coding agents |
+| Doc | Purpose |
+|-----|---------|
+| **[SETUP.md](./SETUP.md)** | Full install (Mac / Linux / Windows), env, troubleshooting |
+| **[BUDDY.md](./BUDDY.md)** | Short handoff for a teammate (“clone, run, point here”) |
+| **[AGENTS.md](./AGENTS.md)** | Notes for AI coding agents |
 
 ---
 
-## License
+## Features (short)
 
-Private project unless a LICENSE file is added — check the repository settings.
+- Single chat or A/B side-by-side
+- Streaming + TTFT / duration timing
+- LM Studio local or remote; optional xAI / OpenAI / Gemini / custom
+- Attachments (PDF, DOCX, text, images, audio, video)
+- Fast mode (less thinking budget on reasoning models)
+
+---
+
+## Optional cloud APIs
+
+Set in `.env.local` or the in-app **API keys** panel:
+
+| Variable | Provider |
+|----------|----------|
+| `XAI_API_KEY` | Grok / SpaceXAI |
+| `OPENAI_API_KEY` | OpenAI |
+| `GEMINI_API_KEY` | Gemini |
+| `CUSTOM_BASE_URL` | Other OpenAI-compatible servers |
+
+Keys stay on **your** machine (server-side), not in the browser.
+
+---
+
+## npm commands (if you prefer)
+
+```bash
+npm install
+cp .env.local.example .env.local   # Windows: copy .env.local.example .env.local
+npm run dev                        # http://localhost:3010
+npm run build && npm start         # production-style local run
+```

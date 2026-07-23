@@ -1,122 +1,98 @@
-# MattChat — buddy test guide
+# Hand this to a teammate
 
-HTML alone **does not work**. MattChat is a Next.js app: the browser UI needs the MattChat **server**, and that server talks to LM Studio / APIs.
-
-## Option A — Use a shared public link (easiest for your buddy)
-
-Someone on campus (you) runs MattChat; buddy opens a public HTTPS URL.
-
-### You (host)
-
-```bash
-cd MattChat
-npm install
-# optional default remote LM Studio:
-# echo 'LM_STUDIO_BASE_URL=http://vpit-llm2.jck.txstate.edu:1234/v1' >> .env.local
-npm run dev:public
-```
-
-In a **second** terminal, expose port 3010:
-
-```bash
-# free temporary public URL (no account)
-npx --yes localtunnel --port 3010
-```
-
-Or, if you have Cloudflare Tunnel installed:
-
-```bash
-cloudflared tunnel --url http://127.0.0.1:3010
-```
-
-Send your buddy the URL printed (e.g. `https://something.loca.lt`).
-
-**Keep both terminals running** while they test.
-
-### Your buddy
-
-1. Open the link you sent.
-2. Source A → provider **LM Studio**.
-3. Base URL:
-
-   ```text
-   http://vpit-llm2.jck.txstate.edu:1234/v1
-   ```
-
-   (Or leave blank if you set `LM_STUDIO_BASE_URL` on the host.)
-4. Click **Scan**, pick the **● loaded** model (or the model that is loaded on the remote server).
-5. Send a message.
-
-**Network note:** The MattChat **server** (your Mac) must reach `vpit-llm2…:1234`. Your buddy does **not** need VPN to the LLM host if *you* host MattChat on a machine that already can.
-
----
-
-## Option B — Same campus / LAN only (no public internet)
-
-You run:
-
-```bash
-npm run dev:public
-```
-
-Buddy opens:
+**Goal:** You run MattChat on **your** computer. Everyone talks to the **same Mac Studio** LM Studio server. No shared HTML, no tunnel required.
 
 ```text
-http://<YOUR_MAC_LAN_IP>:3010
+Your PC  →  MattChat (localhost:3010)  →  Mac Studio LM Studio (:1234)
 ```
-
-Example: `http://10.40.0.113:3010`  
-Find your IP: System Settings → Network, or `ipconfig getifaddr en0`.
-
-Both of you need to be on a network that can reach that IP (and the host must reach LM Studio).
 
 ---
 
-## Option C — Buddy runs MattChat themselves
+## You need
+
+1. **Node.js 18+** — https://nodejs.org (LTS)  
+2. This **git repo** (clone or ZIP)  
+3. Network access to the lab host (campus / VPN as required)
+
+You do **not** need LM Studio on your laptop.
+
+---
+
+## Install & start
+
+### Mac
 
 ```bash
-git clone <your-repo-url>
+git clone <REPO_URL>
 cd MattChat
-npm install
-npm run dev
+chmod +x scripts/*.sh
+./scripts/start-mac.sh
 ```
 
-Open `http://localhost:3010`, set Base URL to the LM Studio host, Scan, chat.
+### Linux
 
-His machine must reach the LM Studio URL (campus network / VPN if required).
+```bash
+git clone <REPO_URL>
+cd MattChat
+chmod +x scripts/*.sh
+./scripts/start-linux.sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+git clone <REPO_URL>
+cd MattChat
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+.\scripts\start-windows.ps1
+```
+
+Browser: **http://localhost:3010**
 
 ---
 
-## What to tell your buddy (copy/paste)
+## Point at the Mac Studio
+
+| Setting | Value |
+|---------|--------|
+| Provider | **LM Studio** |
+| Base URL | `http://vpit-llm2.jck.txstate.edu:1234/v1` |
+
+1. Click **Scan**  
+2. Select the **● loaded** model (whatever is loaded on the Studio)  
+3. Send a message  
+
+Optional — save as default in `.env.local`:
+
+```bash
+LM_STUDIO_BASE_URL=http://vpit-llm2.jck.txstate.edu:1234/v1
+```
+
+---
+
+## Quick test from a terminal
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  http://vpit-llm2.jck.txstate.edu:1234/v1/models
+```
+
+- **200** → you can reach the Studio; open MattChat and Scan  
+- **fail / timeout** → VPN, campus network, or LM Studio server not running on the host  
+
+---
+
+## Copy/paste (short)
 
 ```text
-MattChat buddy test
-
-1) Open: <PASTE_PUBLIC_OR_LAN_URL>
-2) Provider: LM Studio
-3) Base URL: http://vpit-llm2.jck.txstate.edu:1234/v1
-4) Click Scan → select the loaded model (●)
-5) Type a message → Send
-
-If Scan fails: the host machine must be online and able to reach vpit-llm2:1234.
-You only need a browser — no install if using Option A or B.
+1. Install Node LTS from https://nodejs.org
+2. git clone <REPO_URL> && cd MattChat
+3. Mac/Linux:  ./scripts/start-mac.sh   or  ./scripts/start-linux.sh
+   Windows:    .\scripts\start-windows.ps1
+4. Open http://localhost:3010
+5. Provider: LM Studio
+6. Base URL: http://vpit-llm2.jck.txstate.edu:1234/v1
+7. Scan → pick ● loaded model → chat
 ```
 
----
-
-## Security (public links)
-
-- A public tunnel exposes **your** MattChat instance to anyone with the URL.
-- Users can point Base URL at hosts **your server** can reach (including campus LM Studio).
-- Prefer a temporary tunnel; stop it when done.
-- Do not put production API keys in a casually shared public instance unless you trust testers.
-
----
-
-## Checklist before inviting someone
-
-- [ ] LM Studio on the target host is running (port 1234)
-- [ ] From the MattChat host: `curl -s -o /dev/null -w "%{http_code}\n" http://vpit-llm2.jck.txstate.edu:1234/v1/models` → `200`
-- [ ] `npm run dev:public` is running
-- [ ] Tunnel or LAN URL works in an incognito window
-- [ ] Scan shows models; chat returns a reply
+Full detail: **[SETUP.md](./SETUP.md)**
