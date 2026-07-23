@@ -130,11 +130,22 @@ export async function POST(request: Request) {
           stream: true,
         };
 
+        // Fast-mode "no thinking" extras are for local / template models only.
+        // xAI Grok rejects reasoning_effort "none" with HTTP 400.
         if (!enableThinking) {
-          createBody.enable_thinking = false;
-          createBody.chat_template_kwargs = { enable_thinking: false };
-          createBody.reasoning = false;
-          createBody.reasoning_effort = "none";
+          const provider = body.source.provider;
+          const localish =
+            provider === "lmstudio" || provider === "custom";
+          if (localish) {
+            if (isQwenFamily(model) || provider === "lmstudio") {
+              createBody.enable_thinking = false;
+              createBody.chat_template_kwargs = { enable_thinking: false };
+            }
+            createBody.reasoning = false;
+            if (isNemotronFamily(model)) {
+              createBody.reasoning_effort = "none";
+            }
+          }
         }
 
         const completion = (await client.chat.completions.create(
