@@ -5,7 +5,12 @@ import {
   connectionManager,
 } from "@/lib/connections.server";
 import { resolveProvider } from "@/lib/providers.server";
-import { prepareMessagesForSpeed, resolveMaxTokens } from "@/lib/speed";
+import {
+  isNemotronFamily,
+  isQwenFamily,
+  prepareMessagesForSpeed,
+  resolveMaxTokens,
+} from "@/lib/speed";
 import { ThinkingSplitter, extractReasoningDelta } from "@/lib/thinking";
 
 export const runtime = "nodejs";
