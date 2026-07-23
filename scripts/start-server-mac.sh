@@ -5,7 +5,7 @@
 # Usage:
 #   ./scripts/start-server-mac.sh
 #   MATTCHAT_MAX_CONNECTIONS=100 ./scripts/start-server-mac.sh
-#   MATTCHAT_SERVER_NAME="VPIT Studio" ./scripts/start-server-mac.sh
+#   MATTCHAT_SERVER_NAME="Lab Studio" ./scripts/start-server-mac.sh
 #
 # Env (also set in .env.local / .env.production):
 #   MATTCHAT_HOST_MODE=server
@@ -13,7 +13,7 @@
 #   MATTCHAT_SERVER_NAME=Mac Studio Lab
 #   MATTCHAT_ADMIN_TOKEN=change-me
 #   LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1   # local LM Studio on same Mac
-#   # or remote: http://vpit-llm2.jck.txstate.edu:1234/v1
+#   # or remote: http://lmstudio.example.com:1234/v1
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

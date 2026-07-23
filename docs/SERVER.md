@@ -25,7 +25,7 @@ The UI polls `GET /api/status` and shows the mode + connection count.
 cd MattChat
 chmod +x scripts/start-server-mac.sh
 # optional:
-# export MATTCHAT_SERVER_NAME="VPIT Mac Studio"
+# export MATTCHAT_SERVER_NAME="Lab Mac Studio"
 # export MATTCHAT_MAX_CONNECTIONS=100
 # export MATTCHAT_ADMIN_TOKEN='your-long-secret'
 # export LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1
@@ -38,7 +38,7 @@ Or:
 # .env.local
 MATTCHAT_HOST_MODE=server
 MATTCHAT_MAX_CONNECTIONS=100
-MATTCHAT_SERVER_NAME=VPIT Mac Studio
+MATTCHAT_SERVER_NAME=Lab Mac Studio
 LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1
 
 npm install
@@ -77,7 +77,7 @@ GET /api/status
 {
   "ok": true,
   "mode": "server",
-  "serverName": "VPIT Mac Studio",
+  "serverName": "Lab Mac Studio",
   "maxConnections": 100,
   "activeConnections": 12,
   "availableConnections": 88,

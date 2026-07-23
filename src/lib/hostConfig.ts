@@ -5,7 +5,7 @@ export type HostMode = "local" | "server";
 export type HostPublicStatus = {
   ok: true;
   mode: HostMode;
-  /** Friendly label for this host (e.g. "VPIT Mac Studio") */
+  /** Friendly label for this host (e.g. "Lab Mac Studio") */
   serverName: string;
   /** Max concurrent chat streams (and heavy work) */
   maxConnections: number;

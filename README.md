@@ -43,7 +43,7 @@ You do **not** share HTML only. Clients either install the app (A) or use the sh
 ### 1. Prerequisites
 
 - **Node.js 18+** (20 LTS recommended) — [nodejs.org](https://nodejs.org)
-- Network path to the LM Studio host (same LAN / campus / VPN)
+- Network path to the LM Studio host (same LAN / LAN / VPN)
 - **Git** (or download a ZIP of this repo)
 
 ```bash
@@ -83,21 +83,24 @@ Or double-click `scripts\start-windows.cmd`.
 
 Open: **http://localhost:3010**
 
-### 3. Point at the shared Mac Studio
+### 3. Point at your shared LM Studio host
 
 In MattChat → Source A:
 
 | Field | Value |
 |--------|--------|
 | Provider | **LM Studio** |
-| Base URL | `http://vpit-llm2.jck.txstate.edu:1234/v1` |
+| Base URL | `http://127.0.0.1:1234/v1` (same machine) **or** your shared host, e.g. `http://203.0.113.10:1234/v1` |
+
+Docs use **fake** hosts (`lmstudio.example.com`, `203.0.113.10`) — substitute your real hostname/IP.
 
 Then **Scan** → select the **● loaded** model → **Send**.
 
 To make that the default every time, edit `.env.local` (created on first start):
 
 ```bash
-LM_STUDIO_BASE_URL=http://vpit-llm2.jck.txstate.edu:1234/v1
+# example only — replace with your real host
+LM_STUDIO_BASE_URL=http://203.0.113.10:1234/v1
 ```
 
 ---
@@ -140,12 +143,12 @@ Whoever administers the shared box should:
 4. Enable **Serve on Local Network** (or equivalent)
 5. Allow firewall inbound **TCP 1234**
 6. Confirm hostname resolves for clients, e.g.  
-   `http://vpit-llm2.jck.txstate.edu:1234/v1`
+   `http://lmstudio.example.com:1234/v1`
 
 From any client machine:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://vpit-llm2.jck.txstate.edu:1234/v1/models
+curl -s -o /dev/null -w "%{http_code}\n" http://lmstudio.example.com:1234/v1/models
 # expect 200
 ```
 

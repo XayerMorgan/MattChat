@@ -12,7 +12,7 @@ Your PC  →  MattChat (localhost:3010)  →  Mac Studio LM Studio (:1234)
 
 1. **Node.js 18+** — https://nodejs.org (LTS)  
 2. This **git repo** (clone or ZIP)  
-3. Network access to the lab host (campus / VPN as required)
+3. Network access to the lab host (LAN / VPN as required)
 
 You do **not** need LM Studio on your laptop.
 
@@ -56,7 +56,9 @@ Browser: **http://localhost:3010**
 | Setting | Value |
 |---------|--------|
 | Provider | **LM Studio** |
-| Base URL | `http://vpit-llm2.jck.txstate.edu:1234/v1` |
+| Base URL | Your host, e.g. `http://127.0.0.1:1234/v1` or `http://203.0.113.10:1234/v1` |
+
+(`lmstudio.example.com` / `203.0.113.10` in docs are **fake placeholders** — use the real address your admin gives you.)
 
 1. Click **Scan**  
 2. Select the **● loaded** model (whatever is loaded on the Studio)  
@@ -65,7 +67,7 @@ Browser: **http://localhost:3010**
 Optional — save as default in `.env.local`:
 
 ```bash
-LM_STUDIO_BASE_URL=http://vpit-llm2.jck.txstate.edu:1234/v1
+LM_STUDIO_BASE_URL=http://lmstudio.example.com:1234/v1
 ```
 
 ---
@@ -74,11 +76,11 @@ LM_STUDIO_BASE_URL=http://vpit-llm2.jck.txstate.edu:1234/v1
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" \
-  http://vpit-llm2.jck.txstate.edu:1234/v1/models
+  http://lmstudio.example.com:1234/v1/models
 ```
 
 - **200** → you can reach the Studio; open MattChat and Scan  
-- **fail / timeout** → VPN, campus network, or LM Studio server not running on the host  
+- **fail / timeout** → VPN, LAN or VPN, or LM Studio server not running on the host  
 
 ---
 
@@ -91,7 +93,7 @@ curl -s -o /dev/null -w "%{http_code}\n" \
    Windows:    .\scripts\start-windows.ps1
 4. Open http://localhost:3010
 5. Provider: LM Studio
-6. Base URL: http://vpit-llm2.jck.txstate.edu:1234/v1
+6. Base URL: http://lmstudio.example.com:1234/v1
 7. Scan → pick ● loaded model → chat
 ```
 

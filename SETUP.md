@@ -17,7 +17,7 @@ Install MattChat on **your** computer and connect to a **shared LM Studio** host
           ┌────────────────────────────┐
           │  Mac Studio + LM Studio    │
           │  :1234  (shared for all)   │
-          │  e.g. vpit-llm2.jck…       │
+          │  e.g. lmstudio.example.com       │
           └────────────────────────────┘
 ```
 
@@ -34,7 +34,7 @@ Install MattChat on **your** computer and connect to a **shared LM Studio** host
 | **Node.js 18+** | 20 LTS recommended — [nodejs.org](https://nodejs.org) |
 | **npm** | Bundled with Node |
 | **Git** | Or download ZIP of the repo |
-| **Network** | Must reach the Mac Studio on port **1234** (campus LAN/VPN as required) |
+| **Network** | Must reach the Mac Studio on port **1234** (LAN/VPN as required) |
 
 You do **not** need LM Studio installed on the client unless you want a private local model.
 
@@ -143,16 +143,20 @@ First run will:
 
 ## Connect to the shared Mac Studio
 
+> **Docs use fake hosts only.**  
+> `lmstudio.example.com` and `203.0.113.10` are placeholders (not real machines).  
+> Replace them with **your** LM Studio hostname or IP. Same-machine: `http://127.0.0.1:1234/v1`.
+
 ### In the UI
 
 1. **Provider:** LM Studio  
 2. **Base URL:**
 
    ```text
-   http://vpit-llm2.jck.txstate.edu:1234/v1
+   http://lmstudio.example.com:1234/v1
    ```
 
-   (Replace with your lab’s hostname/IP if different.)
+   (Replace with your real hostname/IP.)
 
 3. Click **Scan**  
 4. Choose the model marked **● loaded** (or the id of the model loaded on the Studio)  
@@ -163,7 +167,7 @@ First run will:
 Edit `.env.local` in the project root:
 
 ```bash
-LM_STUDIO_BASE_URL=http://vpit-llm2.jck.txstate.edu:1234/v1
+LM_STUDIO_BASE_URL=http://lmstudio.example.com:1234/v1
 ```
 
 Restart MattChat after changing `.env.local`.
@@ -172,8 +176,8 @@ Restart MattChat after changing `.env.local`.
 
 | Correct | Incorrect |
 |---------|-----------|
-| `http://vpit-llm2.jck.txstate.edu:1234/v1` | `https://…` (use http) |
-| `http://10.230.32.5:1234/v1` | Missing port |
+| `http://lmstudio.example.com:1234/v1` | `https://…` (use http) |
+| `http://203.0.113.10:1234/v1` | Missing port |
 | `http://host:1234` (auto-adds `/v1` on blur) | `…/v1/v1` |
 
 ---
@@ -199,11 +203,11 @@ Verify from a client:
 ```bash
 # Catalog
 curl -s -o /dev/null -w "%{http_code}\n" \
-  http://vpit-llm2.jck.txstate.edu:1234/v1/models
+  http://lmstudio.example.com:1234/v1/models
 
 # Load state (● detection) — optional but nice
 curl -s -o /dev/null -w "%{http_code}\n" \
-  http://vpit-llm2.jck.txstate.edu:1234/api/v0/models
+  http://lmstudio.example.com:1234/api/v0/models
 ```
 
 Both should return `200` when healthy. If only `/v1/models` works, Scan still lists models; pick the loaded one by name manually.
@@ -257,7 +261,7 @@ npm start
 |---------|-------------|
 | `node: command not found` | Install Node 20 LTS; open a **new** terminal |
 | Port 3010 already in use | Quit the other MattChat, or `PORT=3020 ./scripts/start-mac.sh` |
-| Scan fails / Offline | Can you `curl` the Mac Studio `/v1/models`? On VPN/campus? Server started in LM Studio? |
+| Scan fails / Offline | Can you `curl` the Mac Studio `/v1/models`? On VPN/LAN? Server started in LM Studio? |
 | Wrong model selected | Load the right model **on the Mac Studio**; Scan again; pick **● loaded** |
 | “Gemma” but you wanted Qwen | Whatever is **loaded in LM Studio on the Studio** is what the API reports — check the host, not only MattChat |
 | Windows “cannot be loaded” | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
@@ -281,4 +285,4 @@ npm start
 
 ## For teammates (one paragraph)
 
-> Clone the MattChat repo, install Node 18+, run the start script for your OS, open http://localhost:3010, set LM Studio Base URL to `http://vpit-llm2.jck.txstate.edu:1234/v1`, click Scan, pick the loaded model, chat. You need campus network access to that host; you do not need LM Studio on your laptop.
+> Clone the MattChat repo, install Node 18+, run the start script for your OS, open http://localhost:3010, set LM Studio Base URL to `http://lmstudio.example.com:1234/v1`, click Scan, pick the loaded model, chat. You need LAN or VPN access to that host; you do not need LM Studio on your laptop.
