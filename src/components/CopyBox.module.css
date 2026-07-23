@@ -1,9 +1,12 @@
 .wrap {
-  margin-top: 0.65rem;
+  margin-top: 0;
   border: 1px solid var(--border, #273044);
   border-radius: 12px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.22);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .bar {

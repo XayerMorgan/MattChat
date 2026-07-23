@@ -479,30 +479,44 @@
   border-color: #2d416a;
 }
 
-.abGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.9rem;
-  align-items: stretch;
+/* Full A/B block: two columns + compare strip under both */
+.abBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
 }
 
+.abGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: stretch;
+  width: 100%;
+}
+
+/* Each pane is an isolated column: header | scrollable answer | copy + buttons */
 .abPane {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-panel);
   display: flex;
   flex-direction: column;
-  min-height: 240px;
+  min-height: 280px;
+  min-width: 0; /* critical: keep grid children inside their column */
+  max-width: 100%;
   box-shadow: var(--shadow);
   overflow: hidden;
 }
 
 .abPaneA {
   border-top: 3px solid var(--a);
+  grid-column: 1;
 }
 
 .abPaneB {
   border-top: 3px solid var(--b);
+  grid-column: 2;
 }
 
 .abHeader {
@@ -512,6 +526,7 @@
   padding: 0.75rem 0.9rem;
   border-bottom: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.18);
+  flex-shrink: 0;
 }
 
 .abHeader strong {
@@ -538,28 +553,38 @@
 
 .abBody {
   padding: 0.95rem;
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: 420px;
+  overflow-x: hidden;
   overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
   line-height: 1.55;
   font-size: 0.94rem;
+}
+
+.abAnswer {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .abBodyError {
   color: var(--danger);
 }
 
-/* Copy boxes sit below the scrollable answer so both A and B stay visible */
-.abCopy {
+/* Copy + winner controls stay in THIS column under the answer */
+.abBottom {
   flex-shrink: 0;
-  padding: 0 0.75rem 0.55rem;
-  white-space: normal;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.55rem 0.75rem 0.65rem;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.12);
+  min-width: 0;
 }
 
-.abCopy :global(pre) {
-  max-height: 140px;
+.abCopyPlaceholder {
+  min-height: 0;
 }
 
 .streaming {
@@ -570,8 +595,7 @@
 .abFooter {
   display: flex;
   gap: 0.4rem;
-  padding: 0.65rem 0.9rem;
-  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 
 .pickBtn {
@@ -820,5 +844,10 @@
 
   .abGrid {
     grid-template-columns: 1fr;
+  }
+
+  .abPaneA,
+  .abPaneB {
+    grid-column: auto;
   }
 }

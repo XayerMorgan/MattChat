@@ -1998,113 +1998,123 @@ export default function Home() {
                   );
                 }
 
-                return (
-                  <div key={m.id} className={styles.abGrid}>
-                    {(["a", "b"] as const).map((side) => {
-                      const pane = m[side];
-                      return (
-                        <div
-                          key={side}
-                          className={`${styles.abPane} ${
-                            side === "a" ? styles.abPaneA : styles.abPaneB
-                          }`}
-                        >
-                          <div className={styles.abHeader}>
-                            <div>
-                              <strong>{pane.label}</strong>
-                              <div className={styles.metrics}>
-                                <span className={styles.metric}>
-                                  {shortModel(pane.model)}
+                const renderAbColumn = (side: "a" | "b") => {
+                  const pane = m[side];
+                  const answer = (pane.text || "").trim();
+                  return (
+                    <div
+                      key={`${m.id}-pane-${side}`}
+                      className={`${styles.abPane} ${
+                        side === "a" ? styles.abPaneA : styles.abPaneB
+                      }`}
+                    >
+                      <div className={styles.abHeader}>
+                        <div>
+                          <strong>
+                            {side.toUpperCase()}: {pane.label}
+                          </strong>
+                          <div className={styles.metrics}>
+                            <span className={styles.metric}>
+                              {shortModel(pane.model)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className={styles.metrics}>
+                          <span className={styles.metric}>
+                            TTFT {formatMs(pane.ttftMs)}
+                          </span>
+                          <span className={styles.metric}>
+                            {formatMs(pane.latencyMs)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`${styles.abBody} ${
+                          pane.error ? styles.abBodyError : ""
+                        }`}
+                      >
+                        {pane.error ? (
+                          <div className={styles.abAnswer}>{pane.error}</div>
+                        ) : (
+                          <>
+                            <ThinkingBlock
+                              thinking={pane.thinking || ""}
+                              active={Boolean(pane.thinkingActive)}
+                              defaultOpen={Boolean(pane.thinkingActive)}
+                            />
+                            <div className={styles.abAnswer}>
+                              {pane.text ? (
+                                pane.text
+                              ) : pane.loading ? (
+                                <span className={styles.streaming}>
+                                  {pane.thinkingActive
+                                    ? "Model is thinking…"
+                                    : "Streaming…"}
                                 </span>
-                              </div>
+                              ) : (
+                                ""
+                              )}
                             </div>
-                            <div className={styles.metrics}>
-                              <span className={styles.metric}>
-                                TTFT {formatMs(pane.ttftMs)}
-                              </span>
-                              <span className={styles.metric}>
-                                {formatMs(pane.latencyMs)}
-                              </span>
-                            </div>
-                          </div>
-                          <div
-                            className={`${styles.abBody} ${
-                              pane.error ? styles.abBodyError : ""
+                            <TimingStrip timing={pane.timing} />
+                          </>
+                        )}
+                      </div>
+
+                      <div className={styles.abBottom}>
+                        {!pane.error && answer ? (
+                          <CopyBox
+                            text={pane.text}
+                            label={`Copy ${side.toUpperCase()}`}
+                          />
+                        ) : (
+                          <div className={styles.abCopyPlaceholder} />
+                        )}
+                        <div className={styles.abFooter}>
+                          <button
+                            type="button"
+                            className={`${styles.pickBtn} ${
+                              m.winner === side
+                                ? side === "a"
+                                  ? styles.activeA
+                                  : styles.activeB
+                                : ""
                             }`}
+                            disabled={pane.loading || !!pane.error}
+                            onClick={() => setWinner(m.id, side)}
                           >
-                            {pane.error ? (
-                              pane.error
-                            ) : (
-                              <>
-                                <ThinkingBlock
-                                  thinking={pane.thinking || ""}
-                                  active={Boolean(pane.thinkingActive)}
-                                  defaultOpen={Boolean(pane.thinkingActive)}
-                                />
-                                {pane.text ? (
-                                  pane.text
-                                ) : pane.loading ? (
-                                  <span className={styles.streaming}>
-                                    {pane.thinkingActive
-                                      ? "Model is thinking…"
-                                      : "Streaming…"}
-                                  </span>
-                                ) : (
-                                  ""
-                                )}
-                                <TimingStrip timing={pane.timing} />
-                              </>
-                            )}
-                          </div>
-                          {/* Outside abBody so white-space/overflow never hide A or B copy UI */}
-                          {!pane.error && (pane.text || "").trim() ? (
-                            <div className={styles.abCopy}>
-                              <CopyBox
-                                text={pane.text}
-                                label={`Copy ${side.toUpperCase()}`}
-                                hideIfEmpty={false}
-                              />
-                            </div>
-                          ) : null}
-                          <div className={styles.abFooter}>
+                            Winner {side.toUpperCase()}
+                          </button>
+                          {side === "b" && (
                             <button
                               type="button"
                               className={`${styles.pickBtn} ${
-                                m.winner === side
-                                  ? side === "a"
-                                    ? styles.activeA
-                                    : styles.activeB
-                                  : ""
+                                m.winner === "tie" ? styles.activeA : ""
                               }`}
-                              disabled={pane.loading || !!pane.error}
-                              onClick={() => setWinner(m.id, side)}
+                              disabled={m.a.loading || m.b.loading}
+                              onClick={() => setWinner(m.id, "tie")}
                             >
-                              Winner {side.toUpperCase()}
+                              Tie
                             </button>
-                            {side === "b" && (
-                              <button
-                                type="button"
-                                className={`${styles.pickBtn} ${
-                                  m.winner === "tie" ? styles.activeA : ""
-                                }`}
-                                disabled={m.a.loading || m.b.loading}
-                                onClick={() => setWinner(m.id, "tie")}
-                              >
-                                Tie
-                              </button>
-                            )}
-                          </div>
+                          )}
                         </div>
-                      );
-                    })}
-                    <div style={{ gridColumn: "1 / -1" }}>
-                      <TimingCompare
-                        a={m.a.timing}
-                        b={m.b.timing}
-                        aLabel={m.a.label}
-                        bLabel={m.b.label}
-                      />
+                      </div>
                     </div>
+                  );
+                };
+
+                return (
+                  <div key={m.id} className={styles.abBlock}>
+                    <div className={styles.abGrid}>
+                      {renderAbColumn("a")}
+                      {renderAbColumn("b")}
+                    </div>
+                    <TimingCompare
+                      a={m.a.timing}
+                      b={m.b.timing}
+                      aLabel={m.a.label}
+                      bLabel={m.b.label}
+                    />
                   </div>
                 );
               })}
