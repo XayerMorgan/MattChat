@@ -7,6 +7,13 @@ export type StreamMeta = {
   provider: string;
 };
 
+export type StreamUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  reasoningTokens: number | null;
+};
+
 export type StreamResult = {
   text: string;
   thinking: string;
@@ -14,6 +21,7 @@ export type StreamResult = {
   latencyMs?: number;
   ttftMs?: number | null;
   answerTtftMs?: number | null;
+  usage?: StreamUsage;
   error?: string;
 };
 
@@ -37,7 +45,6 @@ export async function streamChat(opts: {
 
   if (!res.ok || !res.body) {
     const fallback = await res.text().catch(() => "");
-    // Surface capacity errors cleanly
     try {
       const j = JSON.parse(fallback) as { error?: string; code?: string };
       if (j?.error) throw new Error(j.error);
@@ -56,6 +63,7 @@ export async function streamChat(opts: {
   let latencyMs: number | undefined;
   let ttftMs: number | null | undefined;
   let answerTtftMs: number | null | undefined;
+  let usage: StreamUsage | undefined;
   let error: string | undefined;
 
   while (true) {
@@ -78,6 +86,10 @@ export async function streamChat(opts: {
         latencyMs?: number;
         ttftMs?: number | null;
         answerTtftMs?: number | null;
+        promptTokens?: number | null;
+        completionTokens?: number | null;
+        totalTokens?: number | null;
+        reasoningTokens?: number | null;
         error?: string;
       };
       try {
@@ -103,11 +115,26 @@ export async function streamChat(opts: {
         latencyMs = event.latencyMs;
         ttftMs = event.ttftMs ?? null;
         answerTtftMs = event.answerTtftMs ?? null;
+        usage = {
+          promptTokens: event.promptTokens ?? null,
+          completionTokens: event.completionTokens ?? null,
+          totalTokens: event.totalTokens ?? null,
+          reasoningTokens: event.reasoningTokens ?? null,
+        };
       } else if (event.type === "error") {
         error = event.error || "Unknown stream error";
       }
     }
   }
 
-  return { text, thinking, meta, latencyMs, ttftMs, answerTtftMs, error };
+  return {
+    text,
+    thinking,
+    meta,
+    latencyMs,
+    ttftMs,
+    answerTtftMs,
+    usage,
+    error,
+  };
 }

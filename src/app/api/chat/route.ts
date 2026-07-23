@@ -128,6 +128,8 @@ export async function POST(request: Request) {
           temperature: body.source.temperature ?? (enableThinking ? 0.7 : 0.5),
           max_tokens: maxTokens,
           stream: true,
+          // Final chunk may include prompt/completion token counts
+          stream_options: { include_usage: true },
         };
 
         // Fast-mode "no thinking" extras are for local / template models only.
@@ -154,9 +156,35 @@ export async function POST(request: Request) {
           >[0]
         )) as AsyncIterable<{
           choices?: Array<{ delta?: Record<string, unknown> }>;
+          usage?: {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+            completion_tokens_details?: { reasoning_tokens?: number };
+          };
         }>;
 
+        let promptTokens: number | null = null;
+        let completionTokens: number | null = null;
+        let totalTokens: number | null = null;
+        let reasoningTokens: number | null = null;
+
         for await (const chunk of completion) {
+          const usage = chunk.usage;
+          if (usage) {
+            if (typeof usage.prompt_tokens === "number") {
+              promptTokens = usage.prompt_tokens;
+            }
+            if (typeof usage.completion_tokens === "number") {
+              completionTokens = usage.completion_tokens;
+            }
+            if (typeof usage.total_tokens === "number") {
+              totalTokens = usage.total_tokens;
+            }
+            const rt = usage.completion_tokens_details?.reasoning_tokens;
+            if (typeof rt === "number") reasoningTokens = rt;
+          }
+
           const delta = chunk.choices?.[0]?.delta;
           if (!delta) continue;
 
@@ -192,6 +220,10 @@ export async function POST(request: Request) {
           latencyMs: Date.now() - started,
           ttftMs: firstTokenAt ? firstTokenAt - started : null,
           answerTtftMs: firstAnswerAt ? firstAnswerAt - started : null,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          reasoningTokens,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

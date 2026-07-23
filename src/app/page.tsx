@@ -35,6 +35,12 @@ import { nowIso, type TimingStamp } from "@/lib/time";
 import { FAST_DEFAULTS } from "@/lib/speed";
 import { streamChat } from "@/lib/streamClient";
 import { mattchatHeaders } from "@/lib/clientId";
+import {
+  newSessionId,
+  promptAndDownloadMetrics,
+  promptPreview,
+  type QueryMetric,
+} from "@/lib/sessionMetrics";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { TimingCompare, TimingStrip } from "@/components/TimingStrip";
 import { ApiKeysButton, KeyManager } from "@/components/KeyManager";
@@ -191,6 +197,8 @@ export default function Home() {
   const [history, setHistory] = useState<AbHistoryItem[]>([]);
   const [status, setStatus] = useState("");
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
+  const [sessionId] = useState(() => newSessionId());
+  const [sessionMetrics, setSessionMetrics] = useState<QueryMetric[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -199,6 +207,10 @@ export default function Home() {
   const sourceBRef = useRef(sourceB);
   sourceARef.current = sourceA;
   sourceBRef.current = sourceB;
+
+  const recordMetric = useCallback((row: QueryMetric) => {
+    setSessionMetrics((prev) => [...prev, row]);
+  }, []);
 
   // Hydrate prefs client-side only. Never contacts LM Studio.
   useEffect(() => {
@@ -731,15 +743,51 @@ export default function Home() {
     else setSourceB((s) => ({ ...s, ...patch }));
   };
 
+  const exportSessionCsv = (opts?: { required?: boolean }) => {
+    if (!sessionMetrics.length) {
+      if (opts?.required) {
+        setStatus("No query metrics in this session yet.");
+      }
+      return null;
+    }
+    const name = promptAndDownloadMetrics(sessionMetrics, sessionId);
+    if (name) {
+      setStatus(
+        `Saved ${sessionMetrics.length} quer${sessionMetrics.length === 1 ? "y" : "ies"} → ${name}`
+      );
+    } else if (opts?.required === false) {
+      setStatus("CSV export cancelled.");
+    }
+    return name;
+  };
+
   const clearAllChats = () => {
     abortRef.current?.abort();
+
+    // Prompt to name & download session metrics before wiping the UI
+    if (sessionMetrics.length > 0) {
+      const name = promptAndDownloadMetrics(sessionMetrics, sessionId);
+      if (name == null) {
+        // User cancelled the filename prompt — don't clear
+        setStatus("Clear cancelled — name a CSV file to export metrics, or cancel to keep chats.");
+        setBusy(false);
+        busyRef.current = false;
+        return;
+      }
+      setStatus(
+        `Exported ${sessionMetrics.length} quer${sessionMetrics.length === 1 ? "y" : "ies"} → ${name}. Chats cleared.`
+      );
+    } else {
+      setStatus("All chats cleared.");
+    }
+
     setMessages([]);
     setHistory([]);
     setAttachments([]);
     setInput("");
+    setSessionMetrics([]);
     setBusy(false);
     busyRef.current = false;
-    setStatus("All chats cleared.");
   };
 
   const setWinner = (msgId: string, winner: "a" | "b" | "tie") => {
@@ -923,9 +971,37 @@ export default function Home() {
               : msg
           )
         );
+        recordMetric({
+          sessionId,
+          queryId: assistantId,
+          timestampIso: endIso,
+          mode: "single",
+          pane: "",
+          provider: activeA.provider,
+          model: result.meta?.model || activeA.model,
+          label: result.meta?.label || sourceLabel(activeA.provider, activeA.model),
+          personality: composed.personalityName,
+          promptPreview: promptPreview(prompt || display),
+          promptChars: (prompt || display).length,
+          responseChars: (result.text || "").length,
+          thinkingChars: (result.thinking || "").length,
+          latencyMs: result.latencyMs ?? null,
+          ttftMs: result.ttftMs ?? null,
+          answerTtftMs: result.answerTtftMs ?? null,
+          promptTokens: result.usage?.promptTokens ?? null,
+          completionTokens: result.usage?.completionTokens ?? null,
+          totalTokens: result.usage?.totalTokens ?? null,
+          reasoningTokens: result.usage?.reasoningTokens ?? null,
+          error: result.error || "",
+        });
+        const tok =
+          result.usage?.totalTokens != null
+            ? ` · ${result.usage.totalTokens} tokens`
+            : "";
         setStatus(
           `Done · start→finish ${formatMs(result.latencyMs)}` +
             (result.ttftMs != null ? ` · TTFT ${formatMs(result.ttftMs)}` : "") +
+            tok +
             (result.thinking ? " · thinking shown" : "") +
             " · 1 request"
         );
@@ -949,6 +1025,29 @@ export default function Home() {
               : msg
           )
         );
+        recordMetric({
+          sessionId,
+          queryId: assistantId,
+          timestampIso: endIso,
+          mode: "single",
+          pane: "",
+          provider: activeA.provider,
+          model: activeA.model,
+          label: sourceLabel(activeA.provider, activeA.model),
+          personality: composed.personalityName,
+          promptPreview: promptPreview(prompt || display),
+          promptChars: (prompt || display).length,
+          responseChars: 0,
+          thinkingChars: 0,
+          latencyMs: Date.now() - new Date(startIso).getTime(),
+          ttftMs: null,
+          answerTtftMs: null,
+          promptTokens: null,
+          completionTokens: null,
+          totalTokens: null,
+          reasoningTokens: null,
+          error: message,
+        });
         setStatus(message);
       } finally {
         setBusy(false);
@@ -1049,6 +1148,33 @@ export default function Home() {
         });
 
         const endIso = nowIso();
+        const personalityName =
+          which === "a"
+            ? composeSystemPrompt(systemPrompt, personalityA).personalityName
+            : composeSystemPrompt(systemPrompt, personalityB).personalityName;
+        recordMetric({
+          sessionId,
+          queryId: `${abId}-${which}`,
+          timestampIso: endIso,
+          mode: "ab",
+          pane: which,
+          provider: source.provider,
+          model: result.meta?.model || source.model,
+          label: result.meta?.label || sourceLabel(source.provider, source.model),
+          personality: personalityName,
+          promptPreview: promptPreview(prompt || display),
+          promptChars: (prompt || display).length,
+          responseChars: (result.text || "").length,
+          thinkingChars: (result.thinking || "").length,
+          latencyMs: result.latencyMs ?? null,
+          ttftMs: result.ttftMs ?? null,
+          answerTtftMs: result.answerTtftMs ?? null,
+          promptTokens: result.usage?.promptTokens ?? null,
+          completionTokens: result.usage?.completionTokens ?? null,
+          totalTokens: result.usage?.totalTokens ?? null,
+          reasoningTokens: result.usage?.reasoningTokens ?? null,
+          error: result.error || "",
+        });
         setMessages((prev) =>
           prev.map((msg) => {
             if (msg.id !== abId || msg.kind !== "ab") return msg;
@@ -1084,6 +1210,33 @@ export default function Home() {
         if ((err as Error).name === "AbortError") return;
         const message = err instanceof Error ? err.message : String(err);
         const endIso = nowIso();
+        const personalityName =
+          which === "a"
+            ? composeSystemPrompt(systemPrompt, personalityA).personalityName
+            : composeSystemPrompt(systemPrompt, personalityB).personalityName;
+        recordMetric({
+          sessionId,
+          queryId: `${abId}-${which}`,
+          timestampIso: endIso,
+          mode: "ab",
+          pane: which,
+          provider: source.provider,
+          model: source.model,
+          label: sourceLabel(source.provider, source.model),
+          personality: personalityName,
+          promptPreview: promptPreview(prompt || display),
+          promptChars: (prompt || display).length,
+          responseChars: 0,
+          thinkingChars: 0,
+          latencyMs: Date.now() - new Date(startIso).getTime(),
+          ttftMs: null,
+          answerTtftMs: null,
+          promptTokens: null,
+          completionTokens: null,
+          totalTokens: null,
+          reasoningTokens: null,
+          error: message,
+        });
         setMessages((prev) =>
           prev.map((msg) => {
             if (msg.id !== abId || msg.kind !== "ab") return msg;
@@ -1636,9 +1789,23 @@ export default function Home() {
             <button
               type="button"
               className={styles.ghostBtn}
+              disabled={!sessionMetrics.length}
+              title={
+                sessionMetrics.length
+                  ? `Export ${sessionMetrics.length} query metrics as CSV`
+                  : "No metrics yet — send a chat first"
+              }
+              onClick={() => exportSessionCsv({ required: true })}
+            >
+              Export CSV
+              {sessionMetrics.length > 0 ? ` (${sessionMetrics.length})` : ""}
+            </button>
+            <button
+              type="button"
+              className={styles.ghostBtn}
               onClick={clearAllChats}
-              disabled={busy && messages.length === 0}
-              title="Clear the conversation and recent A/B winners list"
+              disabled={busy && messages.length === 0 && !sessionMetrics.length}
+              title="Export session metrics CSV (name the file), then clear conversation"
             >
               Clear all chats
             </button>
