@@ -47,6 +47,12 @@ import { TimingCompare, TimingStrip } from "@/components/TimingStrip";
 import { ApiKeysButton, KeyManager } from "@/components/KeyManager";
 import { HostStatusBar } from "@/components/HostStatusBar";
 import { ExportSessionModal } from "@/components/ExportSessionModal";
+import {
+  AttachmentPreviewList,
+  preparedToPreview,
+  type AttachmentPreviewItem,
+} from "@/components/AttachmentPreview";
+import { CopyBox } from "@/components/CopyBox";
 
 type Mode = "single" | "ab";
 type ConnState = "idle" | "loading" | "ok" | "error";
@@ -57,6 +63,7 @@ type UiMessage =
       kind: "user";
       content: string;
       attachmentNames?: string[];
+      attachmentPreviews?: AttachmentPreviewItem[];
       startIso: string;
     }
   | {
@@ -924,6 +931,7 @@ export default function Home() {
       kind: "user",
       content: display,
       attachmentNames: attsSnapshot.map((a) => a.name),
+      attachmentPreviews: attsSnapshot.map(preparedToPreview),
       startIso,
     };
     setMessages((m) => [...m, userMsg]);
@@ -1892,7 +1900,12 @@ export default function Home() {
                       key={m.id}
                       className={`${styles.bubble} ${styles.bubbleUser}`}
                     >
-                      {m.attachmentNames && m.attachmentNames.length > 0 && (
+                      {m.attachmentPreviews && m.attachmentPreviews.length > 0 ? (
+                        <AttachmentPreviewList
+                          items={m.attachmentPreviews}
+                          compact
+                        />
+                      ) : m.attachmentNames && m.attachmentNames.length > 0 ? (
                         <div className={styles.metrics} style={{ marginBottom: 8 }}>
                           {m.attachmentNames.map((n) => (
                             <span key={n} className={styles.metric}>
@@ -1900,7 +1913,7 @@ export default function Home() {
                             </span>
                           ))}
                         </div>
-                      )}
+                      ) : null}
                       {m.content}
                       <TimingStrip
                         timing={{ startIso: m.startIso }}
@@ -1913,6 +1926,10 @@ export default function Home() {
                   );
                 }
                 if (m.kind === "assistant") {
+                  const outText =
+                    m.content ||
+                    (busy && !m.thinking ? "…" : "") ||
+                    (m.thinking && !m.content && !busy ? "" : "");
                   return (
                     <div key={m.id} className={styles.bubble}>
                       {m.sourceLabel && (
@@ -1925,10 +1942,11 @@ export default function Home() {
                         active={Boolean(m.thinkingActive)}
                         defaultOpen={Boolean(m.thinkingActive)}
                       />
-                      {m.content ||
-                        (busy && !m.thinking ? "…" : "") ||
-                        (m.thinking && !m.content && !busy ? "" : "")}
+                      {outText}
                       <TimingStrip timing={m.timing} />
+                      {m.content?.trim() ? (
+                        <CopyBox text={m.content} label="Copy output" />
+                      ) : null}
                     </div>
                   );
                 }
@@ -1988,6 +2006,12 @@ export default function Home() {
                                   ""
                                 )}
                                 <TimingStrip timing={pane.timing} />
+                                {pane.text?.trim() ? (
+                                  <CopyBox
+                                    text={pane.text}
+                                    label={`Copy ${side.toUpperCase()}`}
+                                  />
+                                ) : null}
                               </>
                             )}
                           </div>
@@ -2041,36 +2065,10 @@ export default function Home() {
         <div className={styles.composer}>
           {attachments.length > 0 && (
             <div className={styles.attachList}>
-              {attachments.map((a) => (
-                <div
-                  key={a.id}
-                  className={`${styles.attachChip} ${
-                    a.error ? styles.attachChipBad : ""
-                  }`}
-                  title={a.error || a.name}
-                >
-                  <span>
-                    📎 {a.name}
-                    <span className={styles.attachMeta}>
-                      {" "}
-                      · {a.kind}
-                      {a.pages ? ` · ${a.pages}p` : ""}
-                      {" · "}
-                      {formatBytes(a.size)}
-                      {a.truncated ? " · truncated" : ""}
-                      {a.error ? ` · ${a.error}` : ""}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className={styles.attachRemove}
-                    onClick={() => removeAttachment(a.id)}
-                    aria-label={`Remove ${a.name}`}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+              <AttachmentPreviewList
+                items={attachments.map(preparedToPreview)}
+                onRemove={removeAttachment}
+              />
             </div>
           )}
           <div className={styles.composerInner}>
