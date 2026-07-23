@@ -68,6 +68,148 @@
   line-height: 1.4;
 }
 
+/* Click-to-rename client (default MattChat) */
+.brandNameBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  text-align: left;
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.brandNameBtn:hover h1 {
+  color: #c8d9ff;
+}
+
+.brandNameBtn:hover .brandEditHint {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.brandNameBtn h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 12rem;
+}
+
+.brandEditHint {
+  font-size: 0.85rem;
+  opacity: 0.35;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.brandNameForm {
+  margin: 0;
+  width: 100%;
+}
+
+.brandNameInput {
+  width: 100%;
+  max-width: 14rem;
+  border: 1px solid rgba(122, 162, 255, 0.45);
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 10px;
+  padding: 0.28rem 0.5rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(122, 162, 255, 0.12);
+}
+
+/* Fixed product identity under the editable client name */
+.officialBrand {
+  margin-top: 0.45rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(122, 162, 255, 0.22);
+  background:
+    linear-gradient(
+      120deg,
+      rgba(122, 162, 255, 0.1),
+      rgba(155, 123, 255, 0.08) 55%,
+      rgba(192, 132, 252, 0.06)
+    );
+  max-width: 100%;
+}
+
+.officialBrandRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.officialMark {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #0b0f18;
+  background: linear-gradient(145deg, #9bb8ff 0%, #7a5cff 55%, #c084fc 100%);
+  box-shadow: 0 4px 12px rgba(122, 162, 255, 0.28);
+}
+
+.officialBrandText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.officialName {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #c8d9ff;
+  line-height: 1.15;
+}
+
+.officialMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  line-height: 1.25;
+}
+
+.officialVersion {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.officialDot {
+  opacity: 0.5;
+}
+
+.officialBuilt {
+  color: var(--text-muted);
+}
+
+.brandTagline {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
 .portPill {
   font-size: 0.68rem;
   font-family: var(--font-mono);
@@ -442,8 +584,11 @@
 
 .topActions {
   display: flex;
+  align-items: center;
   gap: 0.45rem;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .chatArea {
@@ -473,34 +618,42 @@
   word-break: break-word;
 }
 
+/* Single mode: one full-width reply + large output box */
+.bubbleSingle {
+  max-width: 100%;
+  width: 100%;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
 .bubbleUser {
   align-self: flex-end;
   background: linear-gradient(180deg, #18233d, #121a2c);
   border-color: #2d416a;
 }
 
-/* Full A/B block: two side-by-side columns (flex, not grid — more reliable) */
+/* A/B: two locked columns — one output box each, never stacked under B */
 .abBlock {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
 }
 
 .abGrid {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.9rem;
+  align-items: stretch;
   width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
 }
 
-/* Each side owns: header → thinking → output/copy box → winner buttons */
+/* Each side owns: header → thinking → ONE output/copy box → winner */
 .abPane {
-  flex: 1 1 0;
-  width: 0; /* equal columns; content cannot expand past 50% */
   min-width: 0;
   max-width: 100%;
   border: 1px solid var(--border);
@@ -508,17 +661,19 @@
   background: var(--bg-panel);
   display: flex;
   flex-direction: column;
-  min-height: 300px;
+  min-height: 320px;
   box-shadow: var(--shadow);
   overflow: hidden;
   box-sizing: border-box;
 }
 
 .abPaneA {
+  grid-column: 1;
   border-top: 3px solid var(--a);
 }
 
 .abPaneB {
+  grid-column: 2;
   border-top: 3px solid var(--b);
 }
 
@@ -555,11 +710,13 @@
 }
 
 .abBody {
-  padding: 0.65rem 0.75rem 0.35rem;
+  padding: 0.55rem 0.75rem 0.25rem;
   flex-shrink: 0;
   line-height: 1.55;
   font-size: 0.94rem;
   min-width: 0;
+  max-height: 160px;
+  overflow: auto;
 }
 
 .abAnswer {
@@ -573,14 +730,20 @@
   padding: 0.5rem 0.15rem;
 }
 
-/* Output/copy lives here — one box per side */
+/* THE output lives here — one CopyBox per column, fills remaining height */
 .abOutput {
   flex: 1 1 auto;
-  min-height: 140px;
+  min-height: 160px;
   min-width: 0;
-  padding: 0 0.65rem 0.55rem;
+  padding: 0.35rem 0.65rem 0.55rem;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+}
+
+.abOutput > * {
+  flex: 1 1 auto;
+  min-height: 140px;
 }
 
 .streaming {
@@ -841,13 +1004,16 @@
     position: relative;
     max-height: none;
   }
+}
 
+/* Only stack A/B on very narrow phones — keep side-by-side otherwise */
+@media (max-width: 640px) {
   .abGrid {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
-  .abPane {
-    width: 100%;
-    flex: 1 1 auto;
+  .abPaneA,
+  .abPaneB {
+    grid-column: auto;
   }
 }

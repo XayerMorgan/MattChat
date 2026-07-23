@@ -53,6 +53,13 @@ import {
   type AttachmentPreviewItem,
 } from "@/components/AttachmentPreview";
 import { CopyBox } from "@/components/CopyBox";
+import { HelpButton, HelpPanel } from "@/components/HelpPanel";
+import {
+  APP_BRAND,
+  APP_TAGLINE,
+  appBuiltByLabel,
+  appVersionLabel,
+} from "@/lib/appMeta";
 
 type Mode = "single" | "ab";
 type ConnState = "idle" | "loading" | "ok" | "error";
@@ -150,6 +157,7 @@ type SourceRuntime = {
 // Bumped to drop corrupt A/B winner history (duplicate React keys) and other
 // stale client prefs. Older mattchat-v* keys are removed on hydrate.
 const STORAGE_KEY = "mattchat-v8";
+const DEFAULT_CLIENT_NAME = "MattChat";
 
 /** Never hardcode a catalog id — server pins chat to the already-loaded model. */
 const DEFAULT_LM_MODEL = "";
@@ -234,16 +242,28 @@ export default function Home() {
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"export" | "clear">("export");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [clientName, setClientName] = useState(DEFAULT_CLIENT_NAME);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(DEFAULT_CLIENT_NAME);
   const [sessionId] = useState(() => newSessionId());
   const [sessionMetrics, setSessionMetrics] = useState<QueryMetric[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const sourceARef = useRef(sourceA);
   const sourceBRef = useRef(sourceB);
   sourceARef.current = sourceA;
   sourceBRef.current = sourceB;
+
+  const applyClientName = useCallback((raw: string) => {
+    const next = raw.trim().slice(0, 48) || DEFAULT_CLIENT_NAME;
+    setClientName(next);
+    setNameDraft(next);
+    setEditingName(false);
+  }, []);
 
   const recordMetric = useCallback((row: QueryMetric) => {
     setSessionMetrics((prev) => [...prev, row]);
@@ -290,6 +310,11 @@ export default function Home() {
         if (parsed.personalityA) setPersonalityA(parsed.personalityA);
         if (parsed.personalityB) setPersonalityB(parsed.personalityB);
         if (typeof parsed.fastMode === "boolean") setFastMode(parsed.fastMode);
+        if (typeof parsed.clientName === "string" && parsed.clientName.trim()) {
+          const n = parsed.clientName.trim().slice(0, 48);
+          setClientName(n);
+          setNameDraft(n);
+        }
         // Mode is intentionally NOT restored — Single is always the default.
         setMode("single");
         if (Array.isArray(parsed.history)) {
@@ -316,6 +341,7 @@ export default function Home() {
         personalityA,
         personalityB,
         fastMode,
+        clientName,
         // Do not persist mode — Single is always default on load
         history,
       })
@@ -328,8 +354,45 @@ export default function Home() {
     personalityA,
     personalityB,
     fastMode,
+    clientName,
     history,
   ]);
+
+  // Keep browser tab title in sync with the custom client name
+  useEffect(() => {
+    if (!hydrated) return;
+    document.title = clientName || DEFAULT_CLIENT_NAME;
+  }, [hydrated, clientName]);
+
+  // Focus the inline rename field when editing
+  useEffect(() => {
+    if (editingName) {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    }
+  }, [editingName]);
+
+  // Global "?" opens Help (skip when typing in inputs)
+  useEffect(() => {
+    if (!hydrated) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "?") return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName?.toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        t?.isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+      setHelpOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hydrated]);
 
   // Keep source flags aligned with Fast mode toggle
   useEffect(() => {
@@ -1658,10 +1721,12 @@ export default function Home() {
     return (
       <div className={styles.boot}>
         <div className={styles.bootDot} />
-        <div>Starting MattChat…</div>
+        <div>Starting {DEFAULT_CLIENT_NAME}…</div>
       </div>
     );
   }
+
+  const displayName = clientName.trim() || DEFAULT_CLIENT_NAME;
 
   const topSub =
     mode === "single"
@@ -1673,8 +1738,65 @@ export default function Home() {
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
           <div className={styles.brandLeft}>
-            <h1>MattChat</h1>
-            <p>Omnimodal chat · clinical timing · A/B</p>
+            {editingName ? (
+              <form
+                className={styles.brandNameForm}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  applyClientName(nameDraft);
+                }}
+              >
+                <input
+                  ref={nameInputRef}
+                  className={styles.brandNameInput}
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onBlur={() => applyClientName(nameDraft)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setNameDraft(clientName);
+                      setEditingName(false);
+                    }
+                  }}
+                  maxLength={48}
+                  aria-label="Client name"
+                  spellCheck={false}
+                />
+              </form>
+            ) : (
+              <button
+                type="button"
+                className={styles.brandNameBtn}
+                onClick={() => {
+                  setNameDraft(clientName);
+                  setEditingName(true);
+                }}
+                title="Click to rename this client (your local label)"
+              >
+                <h1>{displayName}</h1>
+                <span className={styles.brandEditHint} aria-hidden>
+                  ✎
+                </span>
+              </button>
+            )}
+            <div className={styles.officialBrand} title={`${APP_BRAND} ${appVersionLabel()}`}>
+              <div className={styles.officialBrandRow}>
+                <span className={styles.officialMark} aria-hidden>
+                  M
+                </span>
+                <div className={styles.officialBrandText}>
+                  <span className={styles.officialName}>{APP_BRAND}</span>
+                  <span className={styles.officialMeta}>
+                    <span className={styles.officialVersion}>{appVersionLabel()}</span>
+                    <span className={styles.officialDot} aria-hidden>
+                      ·
+                    </span>
+                    <span className={styles.officialBuilt}>{appBuiltByLabel()}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <p className={styles.brandTagline}>{APP_TAGLINE}</p>
           </div>
           <span className={styles.portPill}>:3010</span>
         </div>
@@ -1855,6 +1977,7 @@ export default function Home() {
             >
               Clear all chats
             </button>
+            <HelpButton onClick={() => setHelpOpen(true)} />
           </div>
         </div>
 
@@ -1863,8 +1986,17 @@ export default function Home() {
             <div className={styles.empty}>
               <h3>Ready when your sources are</h3>
               <p>
-                MattChat discovers live models from LM Studio and commercial APIs
-                instead of guessing. Confirm the green Connected badge, then send.
+                {displayName} discovers live models from LM Studio and commercial
+                APIs instead of guessing. Confirm the green Connected badge, then
+                send — or open{" "}
+                <button
+                  type="button"
+                  className={styles.linkish}
+                  onClick={() => setHelpOpen(true)}
+                >
+                  Help
+                </button>{" "}
+                in the top right for a full tour.
               </p>
               <ul className={styles.emptySteps}>
                 <li>
@@ -1946,7 +2078,10 @@ export default function Home() {
                     !m.timing?.endIso &&
                     Boolean(m.thinkingActive || !m.content?.trim());
                   return (
-                    <div key={m.id} className={styles.bubble}>
+                    <div
+                      key={m.id}
+                      className={`${styles.bubble} ${styles.bubbleSingle}`}
+                    >
                       {m.sourceLabel && (
                         <div className={styles.metrics} style={{ marginBottom: 8 }}>
                           <span className={styles.metric}>{m.sourceLabel}</span>
@@ -1959,10 +2094,7 @@ export default function Home() {
                       />
                       {/* Single mode: one full-width output/copy box */}
                       <CopyBox
-                        text={
-                          m.content ||
-                          (streaming && m.thinkingActive ? "" : m.content)
-                        }
+                        text={m.content || ""}
                         label="Output"
                         large
                         streaming={Boolean(streaming)}
@@ -1979,113 +2111,114 @@ export default function Home() {
                   );
                 }
 
-                const renderAbColumn = (side: "a" | "b") => {
-                  const pane = m[side];
-                  return (
-                    <section
-                      key={`${m.id}-col-${side}`}
-                      className={`${styles.abPane} ${
-                        side === "a" ? styles.abPaneA : styles.abPaneB
-                      }`}
-                      aria-label={`Side ${side.toUpperCase()}`}
-                    >
-                      <div className={styles.abHeader}>
-                        <div>
-                          <strong>
-                            Side {side.toUpperCase()}
-                          </strong>
-                          <div className={styles.metrics}>
-                            <span className={styles.metric}>
-                              {shortModel(pane.model)}
-                            </span>
-                          </div>
-                          <div className={styles.metrics}>
-                            <span className={styles.metric}>{pane.label}</span>
-                          </div>
-                        </div>
-                        <div className={styles.metrics}>
-                          <span className={styles.metric}>
-                            TTFT {formatMs(pane.ttftMs)}
-                          </span>
-                          <span className={styles.metric}>
-                            {formatMs(pane.latencyMs)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className={styles.abBody}>
-                        {pane.error ? (
-                          <div className={styles.abBodyError}>{pane.error}</div>
-                        ) : (
-                          <ThinkingBlock
-                            thinking={pane.thinking || ""}
-                            active={Boolean(pane.thinkingActive)}
-                            defaultOpen={Boolean(pane.thinkingActive)}
-                          />
-                        )}
-                        <TimingStrip timing={pane.timing} />
-                      </div>
-
-                      {/* THE output for this side — always in this column */}
-                      <div className={styles.abOutput}>
-                        {pane.error ? (
-                          <CopyBox
-                            text={pane.error}
-                            label={`${side.toUpperCase()} error`}
-                          />
-                        ) : (
-                          <CopyBox
-                            text={pane.text || ""}
-                            label={`${side.toUpperCase()} output`}
-                            streaming={Boolean(pane.loading)}
-                            placeholder={
-                              pane.thinkingActive
-                                ? "Thinking…"
-                                : pane.loading
-                                  ? "Streaming…"
-                                  : "No output yet"
-                            }
-                          />
-                        )}
-                      </div>
-
-                      <div className={styles.abFooter}>
-                        <button
-                          type="button"
-                          className={`${styles.pickBtn} ${
-                            m.winner === side
-                              ? side === "a"
-                                ? styles.activeA
-                                : styles.activeB
-                              : ""
-                          }`}
-                          disabled={pane.loading || !!pane.error}
-                          onClick={() => setWinner(m.id, side)}
-                        >
-                          Winner {side.toUpperCase()}
-                        </button>
-                        {side === "b" && (
-                          <button
-                            type="button"
-                            className={`${styles.pickBtn} ${
-                              m.winner === "tie" ? styles.activeA : ""
-                            }`}
-                            disabled={m.a.loading || m.b.loading}
-                            onClick={() => setWinner(m.id, "tie")}
-                          >
-                            Tie
-                          </button>
-                        )}
-                      </div>
-                    </section>
-                  );
-                };
+                // A/B: two locked grid columns — Side A left, Side B right.
+                // Each column has exactly one output CopyBox (never both under B).
+                const sides = [
+                  { side: "a" as const, pane: m.a },
+                  { side: "b" as const, pane: m.b },
+                ];
 
                 return (
                   <div key={m.id} className={styles.abBlock}>
                     <div className={styles.abGrid}>
-                      {renderAbColumn("a")}
-                      {renderAbColumn("b")}
+                      {sides.map(({ side, pane }) => (
+                        <section
+                          key={`${m.id}-${side}`}
+                          className={`${styles.abPane} ${
+                            side === "a" ? styles.abPaneA : styles.abPaneB
+                          }`}
+                          aria-label={`Side ${side.toUpperCase()} output`}
+                        >
+                          <div className={styles.abHeader}>
+                            <div>
+                              <strong>Side {side.toUpperCase()}</strong>
+                              <div className={styles.metrics}>
+                                <span className={styles.metric}>
+                                  {shortModel(pane.model)}
+                                </span>
+                              </div>
+                              <div className={styles.metrics}>
+                                <span className={styles.metric}>{pane.label}</span>
+                              </div>
+                            </div>
+                            <div className={styles.metrics}>
+                              <span className={styles.metric}>
+                                TTFT {formatMs(pane.ttftMs)}
+                              </span>
+                              <span className={styles.metric}>
+                                {formatMs(pane.latencyMs)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className={styles.abBody}>
+                            {pane.error ? (
+                              <div className={styles.abBodyError}>{pane.error}</div>
+                            ) : (
+                              <ThinkingBlock
+                                thinking={pane.thinking || ""}
+                                active={Boolean(pane.thinkingActive)}
+                                defaultOpen={Boolean(pane.thinkingActive)}
+                              />
+                            )}
+                            <TimingStrip timing={pane.timing} />
+                          </div>
+
+                          <div className={styles.abOutput}>
+                            <CopyBox
+                              text={
+                                pane.error
+                                  ? pane.error
+                                  : pane.text || ""
+                              }
+                              label={
+                                pane.error
+                                  ? `Side ${side.toUpperCase()} · error`
+                                  : `Side ${side.toUpperCase()} · output`
+                              }
+                              streaming={
+                                !pane.error && Boolean(pane.loading)
+                              }
+                              placeholder={
+                                pane.thinkingActive
+                                  ? "Thinking…"
+                                  : pane.loading
+                                    ? "Streaming…"
+                                    : "No output yet"
+                              }
+                            />
+                          </div>
+
+                          <div className={styles.abFooter}>
+                            <button
+                              type="button"
+                              className={`${styles.pickBtn} ${
+                                m.winner === side
+                                  ? side === "a"
+                                    ? styles.activeA
+                                    : styles.activeB
+                                  : ""
+                              }`}
+                              disabled={pane.loading || !!pane.error}
+                              onClick={() => setWinner(m.id, side)}
+                            >
+                              Winner {side.toUpperCase()}
+                            </button>
+                            {side === "b" && (
+                              <button
+                                type="button"
+                                className={`${styles.pickBtn} ${
+                                  m.winner === "tie" ? styles.activeA : ""
+                                }`}
+                                disabled={m.a.loading || m.b.loading}
+                                onClick={() => setWinner(m.id, "tie")}
+                              >
+                                Tie
+                              </button>
+                            )}
+                          </div>
+                        </section>
+                      ))}
                     </div>
                     <TimingCompare
                       a={m.a.timing}
@@ -2200,6 +2333,12 @@ export default function Home() {
           }
         }}
         onConfirm={applyExportAndMaybeClear}
+      />
+      <HelpPanel
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        clientName={clientName}
+        onClientNameChange={applyClientName}
       />
     </div>
   );

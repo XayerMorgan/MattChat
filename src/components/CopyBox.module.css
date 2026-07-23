@@ -14,6 +14,8 @@
 
 .large {
   margin-top: 0.65rem;
+  width: 100%;
+  min-height: 200px;
 }
 
 .bar {
@@ -89,8 +91,8 @@
 }
 
 .large .box {
-  min-height: 140px;
-  max-height: 420px;
+  min-height: 200px;
+  max-height: min(60vh, 520px);
   font-size: 0.86rem;
 }
 
