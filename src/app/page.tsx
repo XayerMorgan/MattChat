@@ -37,7 +37,7 @@ import { streamChat } from "@/lib/streamClient";
 import { mattchatHeaders } from "@/lib/clientId";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { TimingCompare, TimingStrip } from "@/components/TimingStrip";
-import { KeyManager } from "@/components/KeyManager";
+import { ApiKeysButton, KeyManager } from "@/components/KeyManager";
 import { HostStatusBar } from "@/components/HostStatusBar";
 
 type Mode = "single" | "ab";
@@ -190,6 +190,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<AbHistoryItem[]>([]);
   const [status, setStatus] = useState("");
+  const [apiConfigOpen, setApiConfigOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -1498,8 +1499,6 @@ export default function Home() {
           </button>
         </div>
 
-        <KeyManager />
-
         <div className={styles.section}>
           <div className={styles.sectionTitle}>
             <span>Response speed</span>
@@ -1598,6 +1597,7 @@ export default function Home() {
             <div className={styles.topbarSub}>{topSub}</div>
           </div>
           <div className={styles.topActions}>
+            <ApiKeysButton onClick={() => setApiConfigOpen(true)} />
             <button
               type="button"
               className={styles.ghostBtn}
@@ -1632,13 +1632,24 @@ export default function Home() {
               </p>
               <ul className={styles.emptySteps}>
                 <li>
-                  <strong>1.</strong> Connect a model (prefer ● loaded in LM Studio)
+                  <strong>1.</strong> Click{" "}
+                  <button
+                    type="button"
+                    className={styles.linkish}
+                    onClick={() => setApiConfigOpen(true)}
+                  >
+                    API keys
+                  </button>{" "}
+                  (top bar) for Grok, OpenAI, LM Studio, etc.
                 </li>
                 <li>
-                  <strong>2.</strong> Attach PDF / DOCX / text / images / audio / video
+                  <strong>2.</strong> Connect a model (prefer ● loaded in LM Studio)
                 </li>
                 <li>
-                  <strong>3.</strong> Send — Single mode by default; start/finish times logged
+                  <strong>3.</strong> Attach PDF / DOCX / text / images / audio / video
+                </li>
+                <li>
+                  <strong>4.</strong> Send — Single mode by default; start/finish times logged
                 </li>
               </ul>
               <div className={styles.modalityBox}>
@@ -1919,6 +1930,12 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      <KeyManager
+        open={apiConfigOpen}
+        onOpenChange={setApiConfigOpen}
+        panelOnly
+      />
     </div>
   );
 }
