@@ -31,6 +31,10 @@ export type ModelInfo = {
   id: string;
   displayName: string;
   loaded?: boolean;
+  /** LM Studio: max context the GGUF supports */
+  maxContextLength?: number;
+  /** LM Studio: context actually loaded in VRAM right now (this is the hard cap) */
+  loadedContextLength?: number;
 };
 
 export type ListModelsResult = {

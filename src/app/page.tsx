@@ -33,7 +33,7 @@ import {
 } from "@/lib/attachments";
 import { nowIso, type TimingStamp } from "@/lib/time";
 import { FAST_DEFAULTS } from "@/lib/speed";
-import { streamChat } from "@/lib/streamClient";
+import { streamChatComplete } from "@/lib/streamClient";
 import { mattchatHeaders } from "@/lib/clientId";
 import {
   newSessionId,
@@ -60,6 +60,12 @@ import {
   appBuiltByLabel,
   appVersionLabel,
 } from "@/lib/appMeta";
+import {
+  estimateTokens,
+  formatTokPerSec,
+  formatTokenCount,
+  tokensPerSecond,
+} from "@/lib/tokens";
 
 type Mode = "single" | "ab";
 type ConnState = "idle" | "loading" | "ok" | "error";
@@ -114,6 +120,22 @@ type AbHistoryItem = {
   winner: "a" | "b" | "tie";
 };
 
+/** Live generation strip (top bar) — proves the stream is alive */
+type LiveGenStats = {
+  active: boolean;
+  label: string;
+  /** Completion tokens (estimate until usage arrives) */
+  outTokens: number;
+  thinkingTokens: number;
+  tokensPerSec: number;
+  elapsedMs: number;
+  continueRound?: number;
+  /** True when numbers come from provider usage, not char estimate */
+  exact?: boolean;
+  promptTokens?: number | null;
+  totalTokens?: number | null;
+};
+
 /** Ensure every history row has a unique id (localStorage may hold old dupes). */
 function sanitizeHistory(items: AbHistoryItem[]): AbHistoryItem[] {
   const seen = new Set<string>();
@@ -140,7 +162,12 @@ function sanitizeHistory(items: AbHistoryItem[]): AbHistoryItem[] {
   return out.slice(0, 30);
 }
 
-type ModelRow = { id: string; loaded?: boolean };
+type ModelRow = {
+  id: string;
+  loaded?: boolean;
+  loadedContextLength?: number;
+  maxContextLength?: number;
+};
 
 type SourceRuntime = {
   models: string[];
@@ -154,9 +181,9 @@ type SourceRuntime = {
   hasLoadState?: boolean;
 };
 
-// Bumped to drop corrupt A/B winner history (duplicate React keys) and other
-// stale client prefs. Older mattchat-v* keys are removed on hydrate.
-const STORAGE_KEY = "mattchat-v8";
+// Bumped to drop stale maxTokens:1024 Fast defaults that clipped Board memos.
+// Older mattchat-v* keys are removed on hydrate.
+const STORAGE_KEY = "mattchat-v9";
 const DEFAULT_CLIENT_NAME = "MattChat";
 
 /** Never hardcode a catalog id — server pins chat to the already-loaded model. */
@@ -248,6 +275,7 @@ export default function Home() {
   const [nameDraft, setNameDraft] = useState(DEFAULT_CLIENT_NAME);
   const [sessionId] = useState(() => newSessionId());
   const [sessionMetrics, setSessionMetrics] = useState<QueryMetric[]>([]);
+  const [liveGen, setLiveGen] = useState<LiveGenStats | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -255,6 +283,9 @@ export default function Home() {
   const busyRef = useRef(false);
   const sourceARef = useRef(sourceA);
   const sourceBRef = useRef(sourceB);
+  const genStartMsRef = useRef(0);
+  /** Throttle live strip updates so we don't re-render every token */
+  const liveLastUiMsRef = useRef(0);
   sourceARef.current = sourceA;
   sourceBRef.current = sourceB;
 
@@ -268,6 +299,85 @@ export default function Home() {
   const recordMetric = useCallback((row: QueryMetric) => {
     setSessionMetrics((prev) => [...prev, row]);
   }, []);
+
+  const sessionTokenTotals = useMemo(() => {
+    let prompt = 0;
+    let completion = 0;
+    let total = 0;
+    let withUsage = 0;
+    for (const m of sessionMetrics) {
+      if (m.promptTokens != null) prompt += m.promptTokens;
+      if (m.completionTokens != null) completion += m.completionTokens;
+      if (m.totalTokens != null) {
+        total += m.totalTokens;
+        withUsage += 1;
+      }
+    }
+    return {
+      prompt,
+      completion,
+      total,
+      withUsage,
+      queries: sessionMetrics.length,
+    };
+  }, [sessionMetrics]);
+
+  const pushLiveGen = useCallback(
+    (opts: {
+      label: string;
+      content?: string;
+      thinking?: string;
+      continueRound?: number;
+      force?: boolean;
+      exact?: boolean;
+      outTokens?: number;
+      thinkingTokens?: number;
+      promptTokens?: number | null;
+      totalTokens?: number | null;
+    }) => {
+      const now = Date.now();
+      if (!opts.force && now - liveLastUiMsRef.current < 120) return;
+      liveLastUiMsRef.current = now;
+      const start = genStartMsRef.current || now;
+      const elapsedMs = Math.max(1, now - start);
+      const outTokens =
+        opts.outTokens ?? estimateTokens(opts.content || "");
+      const thinkingTokens =
+        opts.thinkingTokens ?? estimateTokens(opts.thinking || "");
+      const all = outTokens + thinkingTokens;
+      setLiveGen({
+        active: true,
+        label: opts.label,
+        outTokens,
+        thinkingTokens,
+        tokensPerSec: tokensPerSecond(all, elapsedMs),
+        elapsedMs,
+        continueRound: opts.continueRound,
+        exact: opts.exact,
+        promptTokens: opts.promptTokens,
+        totalTokens: opts.totalTokens,
+      });
+    },
+    []
+  );
+
+  // Keep tok/s ticking even when the model is quiet for a moment
+  useEffect(() => {
+    if (!busy || !liveGen?.active) return;
+    const id = window.setInterval(() => {
+      setLiveGen((prev) => {
+        if (!prev?.active) return prev;
+        const elapsedMs = Math.max(1, Date.now() - (genStartMsRef.current || Date.now()));
+        const all = prev.outTokens + prev.thinkingTokens;
+        return {
+          ...prev,
+          elapsedMs,
+          tokensPerSec: tokensPerSecond(all, elapsedMs),
+        };
+      });
+    }, 400);
+    return () => window.clearInterval(id);
+  }, [busy, liveGen?.active]);
 
   // Hydrate prefs client-side only. Never contacts LM Studio.
   useEffect(() => {
@@ -290,20 +400,30 @@ export default function Home() {
         const parsed = JSON.parse(raw);
         if (parsed.sourceA) {
           const a = parsed.sourceA as SourceConfig;
+          const maxTokens =
+            typeof a.maxTokens === "number" && a.maxTokens >= 2048
+              ? a.maxTokens
+              : FAST_DEFAULTS.maxTokens;
           setSourceA({
             ...a,
             label: undefined,
             // Never reinstate a stale hard-coded catalog default (e.g. qwen).
             // Empty LM Studio model → server uses the already-loaded instance.
             model: a.model?.trim() || "",
+            maxTokens,
           });
         }
         if (parsed.sourceB) {
           const b = parsed.sourceB as SourceConfig;
+          const maxTokens =
+            typeof b.maxTokens === "number" && b.maxTokens >= 2048
+              ? b.maxTokens
+              : FAST_DEFAULTS.maxTokens;
           setSourceB({
             ...b,
             label: undefined,
             model: b.model?.trim() || "",
+            maxTokens,
           });
         }
         if (parsed.systemPrompt) setSystemPrompt(parsed.systemPrompt);
@@ -718,12 +838,27 @@ export default function Home() {
       const defaultModelId =
         typeof json.defaultModelId === "string" ? json.defaultModelId : "";
       const modelDetails: ModelRow[] = Array.isArray(json.modelDetails)
-        ? json.modelDetails.map((m: { id: string; loaded?: boolean }) => ({
-            id: m.id,
-            // loaded may be undefined for remote OpenAI-compat hosts
-            loaded:
-              typeof m.loaded === "boolean" ? m.loaded : undefined,
-          }))
+        ? json.modelDetails.map(
+            (m: {
+              id: string;
+              loaded?: boolean;
+              loadedContextLength?: number;
+              maxContextLength?: number;
+            }) => ({
+              id: m.id,
+              // loaded may be undefined for remote OpenAI-compat hosts
+              loaded:
+                typeof m.loaded === "boolean" ? m.loaded : undefined,
+              loadedContextLength:
+                typeof m.loadedContextLength === "number"
+                  ? m.loadedContextLength
+                  : undefined,
+              maxContextLength:
+                typeof m.maxContextLength === "number"
+                  ? m.maxContextLength
+                  : undefined,
+            })
+          )
         : models.map((id: string) => ({ id }));
 
       const loadedModels = modelDetails
@@ -735,8 +870,8 @@ export default function Home() {
       const loadedUnion = Array.from(
         new Set([...loadedModels, ...serverLoaded])
       );
-      const diagnostics = Array.isArray(json.diagnostics)
-        ? json.diagnostics
+      const diagnostics: string[] = Array.isArray(json.diagnostics)
+        ? [...json.diagnostics]
         : [];
       const listSource =
         typeof json.listSource === "string" ? json.listSource : "";
@@ -774,16 +909,40 @@ export default function Home() {
       }
 
       const loadedCount = loadedUnion.length;
+      const loadedCtx =
+        modelDetails.find((m) => m.loaded && m.loadedContextLength)
+          ?.loadedContextLength ??
+        modelDetails.find((m) => m.id === selected)?.loadedContextLength;
+      const maxCtx =
+        modelDetails.find((m) => m.loaded && m.maxContextLength)
+          ?.maxContextLength ??
+        modelDetails.find((m) => m.id === selected)?.maxContextLength;
+
+      if (loadedCtx != null) {
+        diagnostics.push(
+          `Loaded context (n_ctx): ${loadedCtx.toLocaleString()}` +
+            (maxCtx != null ? ` · GGUF max ${maxCtx.toLocaleString()}` : "")
+        );
+        if (loadedCtx < 16384) {
+          diagnostics.push(
+            `Generation is limited by loaded context (${loadedCtx}), not Max tokens alone. ` +
+              `In LM Studio, unload and reload the model with context ≥ 32k–49k if you need long Board memos.`
+          );
+        }
+      }
+
       const hostNote =
         typeof json.baseURL === "string" && json.baseURL
           ? ` · ${json.baseURL}`
           : "";
+      const ctxShort =
+        loadedCtx != null ? ` · ctx ${loadedCtx.toLocaleString()}` : "";
       const msg = !models.length
         ? isLmStudio(source.provider)
           ? `Server reachable, but no models found${hostNote}`
           : `No models returned${hostNote}`
         : isLmStudio(source.provider) && loadedCount > 0
-          ? `${models.length} models · ${loadedCount} loaded · ${shortModel(selected)}${hostNote}`
+          ? `${models.length} models · ${loadedCount} loaded · ${shortModel(selected)}${ctxShort}${hostNote}`
           : isLmStudio(source.provider)
             ? `${models.length} models · no ● load state (${listSource || "catalog"})${hostNote} — pick your loaded model`
             : `${models.length} models · ${shortModel(selected)}${hostNote}`;
@@ -833,7 +992,13 @@ export default function Home() {
 
       if (selected) {
         setStatus(
-          `${which.toUpperCase()}: ${sourceLabel(source.provider, selected)}`
+          `${which.toUpperCase()}: ${sourceLabel(source.provider, selected)}` +
+            (loadedCtx != null
+              ? ` · loaded ctx ${loadedCtx.toLocaleString()}` +
+                (maxCtx != null && maxCtx !== loadedCtx
+                  ? ` (GGUF max ${maxCtx.toLocaleString()})`
+                  : "")
+              : "")
         );
       } else {
         setStatus(`${which.toUpperCase()}: scan complete — no model selected`);
@@ -1024,6 +1189,16 @@ export default function Home() {
     setAttachments([]);
     setBusy(true);
     busyRef.current = true;
+    genStartMsRef.current = Date.now();
+    liveLastUiMsRef.current = 0;
+    setLiveGen({
+      active: true,
+      label: mode === "ab" ? "A/B" : "Single",
+      outTokens: 0,
+      thinkingTokens: 0,
+      tokensPerSec: 0,
+      elapsedMs: 0,
+    });
     setStatus(
       attsSnapshot.length
         ? `1 chat stream to model · ${attsSnapshot.length} attachment(s) · no catalog traffic`
@@ -1061,11 +1236,34 @@ export default function Home() {
       ]);
 
       try {
-        const result = await streamChat({
+        let lastContent = "";
+        let lastThinking = "";
+        let contRound = 0;
+        const result = await streamChatComplete({
           source: activeA,
           messages: historyForApi,
           signal: controller.signal,
+          onContinue: (round) => {
+            contRound = round;
+            setStatus(
+              `Auto-continue ${round}/${3} — finishing long multi-part answer…`
+            );
+            pushLiveGen({
+              label: "Single",
+              content: lastContent,
+              thinking: lastThinking,
+              continueRound: round,
+              force: true,
+            });
+          },
           onThinking: (_chunk, full) => {
+            lastThinking = full;
+            pushLiveGen({
+              label: "Single",
+              content: lastContent,
+              thinking: full,
+              continueRound: contRound || undefined,
+            });
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === assistantId && msg.kind === "assistant"
@@ -1075,6 +1273,13 @@ export default function Home() {
             );
           },
           onDelta: (_chunk, full) => {
+            lastContent = full;
+            pushLiveGen({
+              label: "Single",
+              content: full,
+              thinking: lastThinking,
+              continueRound: contRound || undefined,
+            });
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === assistantId && msg.kind === "assistant"
@@ -1111,6 +1316,7 @@ export default function Home() {
               : msg
           )
         );
+        // Always log provider token usage when present (CSV / session totals)
         recordMetric({
           sessionId,
           queryId: assistantId,
@@ -1134,24 +1340,54 @@ export default function Home() {
           reasoningTokens: result.usage?.reasoningTokens ?? null,
           error: result.error || "",
         });
+        const durationMs =
+          result.latencyMs ?? Date.now() - new Date(startIso).getTime();
+        const completionTok =
+          result.usage?.completionTokens ??
+          estimateTokens(result.text || "") +
+            estimateTokens(result.thinking || "");
+        const finalOut =
+          result.usage?.completionTokens ??
+          estimateTokens(result.text || "");
+        const finalThink =
+          result.usage?.reasoningTokens ??
+          estimateTokens(result.thinking || "");
+        setLiveGen({
+          active: false,
+          label: "Single",
+          outTokens: finalOut,
+          thinkingTokens: finalThink,
+          tokensPerSec: tokensPerSecond(
+            finalOut + finalThink || completionTok,
+            durationMs
+          ),
+          elapsedMs: durationMs,
+          exact: result.usage?.completionTokens != null,
+          promptTokens: result.usage?.promptTokens ?? null,
+          totalTokens: result.usage?.totalTokens ?? null,
+        });
         const tok =
           result.usage?.totalTokens != null
-            ? ` · ${result.usage.totalTokens} tokens`
-            : "";
+            ? ` · ${formatTokenCount(result.usage.totalTokens)} tokens (prompt ${formatTokenCount(result.usage.promptTokens)} + out ${formatTokenCount(result.usage.completionTokens)})`
+            : result.usage?.completionTokens != null
+              ? ` · ${formatTokenCount(result.usage.completionTokens)} completion tokens`
+              : "";
+        const segs = (result.continueCount ?? 0) + 1;
         setStatus(
           `Done · start→finish ${formatMs(result.latencyMs)}` +
             (result.ttftMs != null ? ` · TTFT ${formatMs(result.ttftMs)}` : "") +
             tok +
             (result.thinking ? " · thinking shown" : "") +
+            (segs > 1 ? ` · ${segs} segments (auto-continue)` : " · 1 request") +
             (result.truncated
-              ? ` · TRUNCATED at max tokens${
-                  result.maxTokens != null ? ` (${result.maxTokens})` : ""
-                } — raise Max tokens`
-              : "") +
-            " · 1 request"
+              ? ` · still TRUNCATED — raise Max tokens`
+              : "")
         );
       } catch (err) {
-        if ((err as Error).name === "AbortError") return;
+        if ((err as Error).name === "AbortError") {
+          setLiveGen(null);
+          return;
+        }
         const message = err instanceof Error ? err.message : String(err);
         const endIso = nowIso();
         setMessages((prev) =>
@@ -1194,6 +1430,7 @@ export default function Home() {
           error: message,
         });
         setStatus(message);
+        setLiveGen(null);
       } finally {
         setBusy(false);
         busyRef.current = false;
@@ -1253,6 +1490,14 @@ export default function Home() {
         delete nextPatch.thinking;
       }
       abDraft[which] = { ...abDraft[which], ...nextPatch };
+      // Live token strip: sum both panes so long A/B runs still look alive
+      const combinedOut = `${abDraft.a.text || ""}\n${abDraft.b.text || ""}`;
+      const combinedThink = `${abDraft.a.thinking || ""}\n${abDraft.b.thinking || ""}`;
+      pushLiveGen({
+        label: "A/B",
+        content: combinedOut,
+        thinking: combinedThink,
+      });
       setMessages((prev) => {
         // Read draft at apply-time so queued updates never apply a stale snap
         // that would blank side A when side B publishes.
@@ -1302,10 +1547,22 @@ export default function Home() {
       apiMessages: ChatMessage[]
     ) => {
       try {
-        const result = await streamChat({
+        const result = await streamChatComplete({
           source,
           messages: apiMessages,
           signal: controller.signal,
+          onContinue: (round) => {
+            setStatus(
+              `Side ${which.toUpperCase()}: auto-continue ${round}/3…`
+            );
+            pushLiveGen({
+              label: "A/B",
+              content: `${abDraft.a.text || ""}\n${abDraft.b.text || ""}`,
+              thinking: `${abDraft.a.thinking || ""}\n${abDraft.b.thinking || ""}`,
+              continueRound: round,
+              force: true,
+            });
+          },
           onMeta: (meta) => {
             publishAb(which, { label: meta.label, model: meta.model });
           },
@@ -1336,6 +1593,7 @@ export default function Home() {
         const finalThinking =
           result.thinking || abDraft[which].thinking || "";
 
+        // Per-pane usage is recorded for CSV / session totals
         recordMetric({
           sessionId,
           queryId: `${abId}-${which}`,
@@ -1433,6 +1691,20 @@ export default function Home() {
             ? ` · TRUNCATED on ${truncatedSides.join(" & ")} — raise Max tokens`
             : "")
       );
+      setLiveGen((prev) => {
+        if (!prev) return prev;
+        const elapsedMs = Math.max(
+          1,
+          Date.now() - (genStartMsRef.current || Date.now())
+        );
+        const all = prev.outTokens + prev.thinkingTokens;
+        return {
+          ...prev,
+          active: false,
+          elapsedMs,
+          tokensPerSec: tokensPerSecond(all, elapsedMs),
+        };
+      });
     } finally {
       setBusy(false);
       busyRef.current = false;
@@ -1462,10 +1734,13 @@ export default function Home() {
       source.provider === "lmstudio" || source.provider === "custom";
     const isLocal = isLmStudio(source.provider);
     const derived = sourceLabel(source.provider, source.model);
-    const details =
+    const details: ModelRow[] =
       runtime.modelDetails.length > 0
         ? runtime.modelDetails
-        : runtime.models.map((id) => ({ id, loaded: undefined as boolean | undefined }));
+        : runtime.models.map((id) => ({
+            id,
+            loaded: undefined as boolean | undefined,
+          }));
 
     return (
       <div
@@ -1673,6 +1948,61 @@ export default function Home() {
                   : "Scan"}
             </button>
           </div>
+          {isLocal && (() => {
+            const loadedRows = details.filter((m) => m.loaded === true);
+            const selectedRow = details.find((m) => m.id === source.model);
+            if (runtime.conn === "loading") return null;
+            if (loadedRows.length > 0) {
+              const ids = loadedRows.map((m) => shortModel(m.id)).join(", ");
+              const selectedIsLoaded = selectedRow?.loaded === true;
+              return (
+                <div
+                  className={
+                    selectedIsLoaded ? styles.hintOk : styles.hintBad
+                  }
+                  style={{ marginTop: 6 }}
+                >
+                  <strong>LM Studio reports ● in memory:</strong> {ids}
+                  {!selectedIsLoaded && source.model ? (
+                    <>
+                      <br />
+                      Selection <code>{shortModel(source.model)}</code> is{" "}
+                      <strong>not</strong> loaded on this host — chat will pin
+                      to the ● model above (or load will fail).
+                    </>
+                  ) : null}
+                  {loadedRows[0]?.loadedContextLength != null ? (
+                    <>
+                      <br />
+                      Loaded context:{" "}
+                      {loadedRows[0].loadedContextLength.toLocaleString()}
+                      {loadedRows[0].maxContextLength != null
+                        ? ` (GGUF max ${loadedRows[0].maxContextLength.toLocaleString()})`
+                        : ""}
+                    </>
+                  ) : null}
+                </div>
+              );
+            }
+            if (details.length > 0 && runtime.hasLoadState === false) {
+              return (
+                <div className={styles.hint} style={{ marginTop: 6 }}>
+                  No ● load flags from this host — catalog only. Pick the model
+                  that is actually loaded in LM Studio.
+                </div>
+              );
+            }
+            if (details.length > 0) {
+              return (
+                <div className={styles.hintBad} style={{ marginTop: 6 }}>
+                  No model is loaded on this LM Studio host right now. Load
+                  Qwen (or your model) in LM Studio on the server, then Scan
+                  again.
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
 
         <div className={styles.field}>
@@ -1751,8 +2081,9 @@ export default function Home() {
             }
           />
           <p className={styles.hint}>
-            Hard cap on completion length. Long Board-style memos need ≥4k;
-            if output stops mid-sentence, raise this or switch to Thinking.
+            Hard cap per generation segment. Long Board memos: use ≥8k–16k.
+            MattChat auto-continues up to 3 extra segments if the model hits
+            the cap or stops mid multi-part answer.
           </p>
         </div>
 
@@ -2000,6 +2331,65 @@ export default function Home() {
           <div className={styles.topbarMeta}>
             <h2>{mode === "single" ? "Chat" : "Side-by-side A/B"}</h2>
             <div className={styles.topbarSub}>{topSub}</div>
+            {(liveGen || sessionTokenTotals.total > 0) && (
+              <div
+                className={`${styles.liveTokens} ${
+                  liveGen?.active ? styles.liveTokensActive : ""
+                }`}
+                title={
+                  liveGen?.exact
+                    ? "Token counts from provider usage"
+                    : "Live estimates (~4 chars/token) until the provider reports usage; session totals use logged usage when available"
+                }
+              >
+                {liveGen ? (
+                  <>
+                    <span className={styles.livePulse} aria-hidden />
+                    <strong>{liveGen.active ? "Live" : "Last"}</strong>
+                    <span>
+                      out {formatTokenCount(liveGen.outTokens)}
+                      {liveGen.thinkingTokens > 0
+                        ? ` · think ${formatTokenCount(liveGen.thinkingTokens)}`
+                        : ""}
+                    </span>
+                    <span className={styles.liveTps}>
+                      {formatTokPerSec(liveGen.tokensPerSec)}
+                    </span>
+                    <span>
+                      {liveGen.elapsedMs >= 1000
+                        ? `${(liveGen.elapsedMs / 1000).toFixed(1)}s`
+                        : `${liveGen.elapsedMs}ms`}
+                    </span>
+                    {liveGen.continueRound ? (
+                      <span>cont {liveGen.continueRound}/3</span>
+                    ) : null}
+                    {liveGen.totalTokens != null ? (
+                      <span>
+                        total {formatTokenCount(liveGen.totalTokens)}
+                        {liveGen.promptTokens != null
+                          ? ` (prompt ${formatTokenCount(liveGen.promptTokens)})`
+                          : ""}
+                      </span>
+                    ) : null}
+                    {!liveGen.exact && liveGen.active ? (
+                      <span className={styles.liveEst}>est.</span>
+                    ) : null}
+                  </>
+                ) : null}
+                {sessionTokenTotals.total > 0 || sessionTokenTotals.withUsage > 0 ? (
+                  <span className={styles.sessionTokens}>
+                    Session{" "}
+                    {formatTokenCount(sessionTokenTotals.total)} total
+                    {sessionTokenTotals.completion > 0
+                      ? ` · ${formatTokenCount(sessionTokenTotals.completion)} out`
+                      : ""}
+                    {" · "}
+                    {sessionTokenTotals.queries} quer
+                    {sessionTokenTotals.queries === 1 ? "y" : "ies"}
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
           <div className={styles.topActions}>
             <ApiKeysButton onClick={() => setApiConfigOpen(true)} />

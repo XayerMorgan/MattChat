@@ -4,8 +4,12 @@ import {
   clientMetaFromRequest,
   connectionManager,
 } from "@/lib/connections.server";
-import { resolveProvider } from "@/lib/providers.server";
 import {
+  getLmStudioContextInfo,
+  resolveProvider,
+} from "@/lib/providers.server";
+import {
+  contextCapNote,
   isNemotronFamily,
   isQwenFamily,
   prepareMessagesForSpeed,
@@ -24,6 +28,21 @@ type ChatBody = {
   source: SourceConfig;
   messages: ChatMessage[];
 };
+
+function estimatePromptChars(messages: ChatMessage[]): number {
+  let n = 0;
+  for (const m of messages) {
+    if (typeof m.content === "string") n += m.content.length;
+    else if (Array.isArray(m.content)) {
+      for (const p of m.content) {
+        if (p && typeof p === "object" && "text" in p) {
+          n += String((p as { text?: string }).text || "").length;
+        }
+      }
+    }
+  }
+  return n;
+}
 
 /**
  * Exactly one upstream completion request per HTTP call.
@@ -87,8 +106,10 @@ export async function POST(request: Request) {
   }
 
   const enableThinking = body.source.enableThinking === true;
-  const maxTokens = resolveMaxTokens(body.source);
   const messages = prepareMessagesForSpeed(rawMessages, body.source);
+  const promptChars = estimatePromptChars(messages);
+  // Requested before context clamp (for diagnostics)
+  const requestedMaxTokens = resolveMaxTokens(body.source, { promptChars });
 
   const encoder = new TextEncoder();
   const started = Date.now();
@@ -105,9 +126,27 @@ export async function POST(request: Request) {
       const splitter = new ThinkingSplitter();
 
       try {
-        const { client, model, label, remappedFrom } = await resolveProvider(
-          body.source
+        const { client, model, label, remappedFrom, baseURL } =
+          await resolveProvider(body.source);
+
+        let loadedContextLength: number | undefined;
+        let maxContextLength: number | undefined;
+        if (body.source.provider === "lmstudio") {
+          const ctx = await getLmStudioContextInfo(baseURL, model);
+          loadedContextLength = ctx.loadedContextLength;
+          maxContextLength = ctx.maxContextLength;
+        }
+
+        const maxTokens = resolveMaxTokens(body.source, {
+          promptChars,
+          loadedContextLength,
+        });
+        const capNote = contextCapNote(
+          requestedMaxTokens,
+          maxTokens,
+          loadedContextLength
         );
+
         send({
           type: "meta",
           label,
@@ -115,9 +154,13 @@ export async function POST(request: Request) {
           provider: body.source.provider,
           enableThinking,
           maxTokens,
+          requestedMaxTokens,
+          loadedContextLength: loadedContextLength ?? null,
+          maxContextLength: maxContextLength ?? null,
           connectionId,
           activeConnections: slot.active,
           maxConnections: slot.max,
+          ...(capNote ? { contextCapNote: capNote } : {}),
           ...(remappedFrom
             ? {
                 remappedFrom,

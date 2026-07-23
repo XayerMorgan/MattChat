@@ -5,11 +5,11 @@ export const FAST_DEFAULTS = {
   enableThinking: false,
   /**
    * Fast mode still needs room for structured answers (risk matrices, memos).
-   * 1024 cut off mid-sentence on long CIO-style prompts.
+   * Long Board-style prompts often need 8k+; auto-continue covers the rest.
    */
-  maxTokens: 4096,
+  maxTokens: 8192,
   /** Thinking / deep mode default completion budget */
-  thinkingMaxTokens: 8192,
+  thinkingMaxTokens: 16384,
   /** How many prior user/assistant pairs to keep */
   maxTurns: 2,
   temperature: 0.5,
@@ -94,11 +94,74 @@ export function prepareMessagesForSpeed(
   return out;
 }
 
-export function resolveMaxTokens(source: SourceConfig): number {
-  if (typeof source.maxTokens === "number" && source.maxTokens > 0) {
-    return Math.min(Math.floor(source.maxTokens), 32768);
+export type ResolveMaxTokensOpts = {
+  /** Approx size of the user-facing prompt (chars) — long memos need more room */
+  promptChars?: number;
+  /**
+   * LM Studio *loaded* context (n_ctx), not the GGUF max.
+   * Generation cannot exceed remaining context after the prompt.
+   */
+  loadedContextLength?: number;
+};
+
+/**
+ * Resolve completion budget for a request.
+ * - Raises a floor for long structured prompts (so stale 1024 prefs cannot clip Board memos)
+ * - Caps to loaded LM Studio context so we don't request more than the server can emit
+ */
+export function resolveMaxTokens(
+  source: SourceConfig,
+  opts?: ResolveMaxTokensOpts
+): number {
+  let max =
+    typeof source.maxTokens === "number" && source.maxTokens > 0
+      ? Math.floor(source.maxTokens)
+      : source.enableThinking === true
+        ? FAST_DEFAULTS.thinkingMaxTokens
+        : FAST_DEFAULTS.maxTokens;
+
+  // Stale localStorage often still has 1024 from early Fast defaults
+  if (max > 0 && max < 2048) {
+    max = source.enableThinking
+      ? FAST_DEFAULTS.thinkingMaxTokens
+      : FAST_DEFAULTS.maxTokens;
   }
-  return source.enableThinking === true
-    ? FAST_DEFAULTS.thinkingMaxTokens
-    : FAST_DEFAULTS.maxTokens;
+
+  // Long multi-part prompts (CIO memos etc.) need a higher floor even if the
+  // slider was left low — auto-continue still helps but first segment should breathe.
+  const chars = opts?.promptChars ?? 0;
+  if (chars >= 2500 && max < 8192) {
+    max = 8192;
+  } else if (chars >= 1200 && max < 4096) {
+    max = 4096;
+  }
+
+  max = Math.min(Math.max(max, 256), 32768);
+
+  const loadedCtx = opts?.loadedContextLength;
+  if (typeof loadedCtx === "number" && loadedCtx > 0) {
+    // Leave headroom for system + history + this prompt inside n_ctx.
+    // Without this, max_tokens=16k on an 8k loaded model is silently clipped.
+    const reserve = Math.min(
+      Math.max(2048, Math.floor(loadedCtx * 0.35)),
+      Math.floor(loadedCtx * 0.6)
+    );
+    const room = Math.max(256, loadedCtx - reserve);
+    if (max > room) max = room;
+  }
+
+  return max;
+}
+
+/** Human-readable note when generation is limited by loaded context */
+export function contextCapNote(
+  requested: number,
+  effective: number,
+  loadedCtx?: number
+): string | undefined {
+  if (!loadedCtx || effective >= requested) return undefined;
+  return (
+    `Capped max_tokens ${requested} → ${effective} because LM Studio loaded context is only ${loadedCtx}. ` +
+    `Raise context when loading the model in LM Studio (your GGUF may allow more).`
+  );
 }

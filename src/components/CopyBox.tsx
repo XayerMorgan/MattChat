@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { OutputPopout } from "@/components/OutputPopout";
 import styles from "./CopyBox.module.css";
 
 type Props = {
@@ -27,6 +28,7 @@ export function CopyBox({
   placeholder = "Waiting for model output…",
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [popout, setPopout] = useState(false);
   const value = typeof text === "string" ? text : String(text ?? "");
 
   const onCopy = useCallback(async () => {
@@ -43,7 +45,7 @@ export function CopyBox({
       try {
         document.execCommand("copy");
       } finally {
-        ta.remove();
+        if (ta.parentNode) ta.parentNode.removeChild(ta);
       }
     }
     setCopied(true);
@@ -63,15 +65,26 @@ export function CopyBox({
             <span className={styles.live}> · streaming</span>
           ) : null}
         </span>
-        <button
-          type="button"
-          className={`${styles.copyBtn} ${copied ? styles.copied : ""}`}
-          onClick={() => void onCopy()}
-          disabled={!value.trim()}
-          title="Copy this side’s output to clipboard"
-        >
-          {copied ? "Copied" : "Copy"}
-        </button>
+        <div className={styles.barActions}>
+          <button
+            type="button"
+            className={styles.copyBtn}
+            onClick={() => setPopout(true)}
+            disabled={!value.trim() && !streaming}
+            title="Pop out full-screen (text / markdown / HTML)"
+          >
+            Pop out
+          </button>
+          <button
+            type="button"
+            className={`${styles.copyBtn} ${copied ? styles.copied : ""}`}
+            onClick={() => void onCopy()}
+            disabled={!value.trim()}
+            title="Copy this side’s output to clipboard"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
       </div>
       <pre
         className={`${styles.box} ${!value.trim() ? styles.boxEmpty : ""}`}
@@ -79,6 +92,13 @@ export function CopyBox({
       >
         {value.trim() ? value : placeholder}
       </pre>
+      <OutputPopout
+        open={popout}
+        onClose={() => setPopout(false)}
+        text={value}
+        title={label}
+        streaming={streaming}
+      />
     </div>
   );
 }

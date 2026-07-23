@@ -114,28 +114,66 @@ type NativeList = {
 function rowLooksLoaded(row: Record<string, unknown>): {
   loaded: boolean;
   instanceId: string;
+  loadedContextLength?: number;
+  maxContextLength?: number;
 } {
   const state = String(row.state || row.status || "").toLowerCase();
   const instances = row.loaded_instances;
   const hasInstances = Array.isArray(instances) && instances.length > 0;
   let instanceId = "";
+  let loadedContextLength: number | undefined;
   if (hasInstances) {
     const first = instances[0] as Record<string, unknown>;
     instanceId = String(first?.id || first?.model || "").trim();
+    const fromInst = Number(
+      first?.config &&
+        typeof first.config === "object" &&
+        (first.config as { contextLength?: unknown }).contextLength != null
+        ? (first.config as { contextLength?: unknown }).contextLength
+        : first?.context_length ?? first?.n_ctx
+    );
+    if (Number.isFinite(fromInst) && fromInst > 0) {
+      loadedContextLength = Math.floor(fromInst);
+    }
   }
 
-  // Also accept newer / alternate flags some LM Studio builds expose
-  const loaded =
+  const maxContextLength = (() => {
+    const n = Number(
+      row.max_context_length ?? row.max_context_len ?? row.context_length
+    );
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+  })();
+
+  const topLoadedCtx = (() => {
+    const n = Number(row.loaded_context_length ?? row.loaded_context_len);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+  })();
+
+  // Strict loaded detection — do NOT treat idle/ready alone as loaded.
+  // False positives (catalog order) were selecting Gemma while Qwen was expected.
+  const explicitlyNotLoaded =
+    state === "not-loaded" ||
+    state === "unloaded" ||
+    state === "not_loaded" ||
+    row.loaded === false ||
+    row.is_loaded === false;
+
+  const explicitlyLoaded =
     state === "loaded" ||
-    state === "idle" ||
-    state === "ready" ||
     hasInstances ||
     row.loaded === true ||
     row.is_loaded === true ||
     row.in_memory === true ||
     String(row.load_state || "").toLowerCase() === "loaded";
 
-  return { loaded: Boolean(loaded), instanceId };
+  const loaded = explicitlyNotLoaded ? false : Boolean(explicitlyLoaded);
+
+  return {
+    loaded: Boolean(loaded),
+    instanceId,
+    loadedContextLength: topLoadedCtx ?? loadedContextLength,
+    maxContextLength,
+  };
 }
 
 /**
@@ -156,12 +194,15 @@ function parseLmStudioNativeRows(
     const type = String(row.type || row.model_type || "llm").toLowerCase();
     if (type.includes("embed") || type === "embedding") continue;
 
-    const { loaded, instanceId } = rowLooksLoaded(row);
+    const { loaded, instanceId, loadedContextLength, maxContextLength } =
+      rowLooksLoaded(row);
     const chatId = instanceId || id;
     raw.push({
       id,
       displayName: displayModelName(id),
       loaded: Boolean(loaded),
+      loadedContextLength,
+      maxContextLength,
     });
     if (loaded) {
       rawLoaded.push(chatId);
@@ -184,6 +225,8 @@ function parseLmStudioNativeRows(
         id: m.id.includes("@") ? base : m.id,
         displayName: displayModelName(base),
         loaded: m.loaded,
+        loadedContextLength: m.loadedContextLength,
+        maxContextLength: m.maxContextLength,
       });
       continue;
     }
@@ -191,6 +234,9 @@ function parseLmStudioNativeRows(
       id: prev.id.includes("@") && !m.id.includes("@") ? m.id : prev.id,
       displayName: prev.displayName,
       loaded: Boolean(prev.loaded || m.loaded),
+      loadedContextLength:
+        m.loadedContextLength ?? prev.loadedContextLength,
+      maxContextLength: m.maxContextLength ?? prev.maxContextLength,
     });
   }
 
@@ -298,12 +344,15 @@ async function listOpenAICompatibleModels(
     if (!id) continue;
     const type = String(r.type || r.object || "").toLowerCase();
     if (type.includes("embed")) continue;
-    const { loaded } = rowLooksLoaded(r);
+    const { loaded, loadedContextLength, maxContextLength } =
+      rowLooksLoaded(r);
     models.push({
       id,
       displayName: displayModelName(id),
       // Only set when we truly know; undefined = unknown (remote /v1 often)
       loaded: loaded ? true : undefined,
+      loadedContextLength,
+      maxContextLength,
     });
   }
 
@@ -385,6 +434,29 @@ export async function pinToLoadedLmStudioModel(
       "Check Base URL (http://IP:1234/v1), Local Server is running + “Serve on Network”, " +
       "and the host is reachable from the MattChat machine."
   );
+}
+
+/** Look up loaded / max context for a model id from LM Studio catalog. */
+export async function getLmStudioContextInfo(
+  baseURL: string,
+  modelId: string
+): Promise<{ loadedContextLength?: number; maxContextLength?: number }> {
+  try {
+    const listed = await listModels({
+      provider: "lmstudio",
+      baseUrl: baseURL,
+    });
+    const hit =
+      listed.models.find((m) => modelsMatch(m.id, modelId) && m.loaded) ||
+      listed.models.find((m) => modelsMatch(m.id, modelId)) ||
+      listed.models.find((m) => m.loaded);
+    return {
+      loadedContextLength: hit?.loadedContextLength,
+      maxContextLength: hit?.maxContextLength,
+    };
+  } catch {
+    return {};
+  }
 }
 
 export async function resolveProvider(source: SourceConfig): Promise<{
@@ -480,6 +552,20 @@ export async function listModels(
           `${native.loadedIds.length} loaded` +
           (native.loadedIds[0] ? ` · ${native.loadedIds[0]}` : "")
       );
+      if (native.loadedIds.length) {
+        diagnostics.push(
+          `● IN MEMORY (authoritative): ${native.loadedIds.join(", ")}`
+        );
+      } else {
+        diagnostics.push(
+          "No model reports state=loaded / loaded_instances on this host. " +
+            "Load a model in LM Studio on that machine, then Scan again."
+        );
+      }
+      const catalogIds = native.models.map((m) => m.id).slice(0, 12);
+      if (catalogIds.length) {
+        diagnostics.push(`Catalog sample: ${catalogIds.join(", ")}`);
+      }
     }
 
     if (openaiResult.status === "rejected") {
