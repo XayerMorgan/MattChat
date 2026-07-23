@@ -1,4 +1,9 @@
 import type { ChatMessage, SourceConfig } from "@/lib/providers";
+import {
+  capacityResponse,
+  clientMetaFromRequest,
+  connectionManager,
+} from "@/lib/connections.server";
 import { resolveProvider } from "@/lib/providers.server";
 import { prepareMessagesForSpeed, resolveMaxTokens } from "@/lib/speed";
 import { ThinkingSplitter, extractReasoningDelta } from "@/lib/thinking";
@@ -13,6 +18,7 @@ type ChatBody = {
 
 /**
  * Exactly one upstream completion request per HTTP call.
+ * Counts toward concurrent connection capacity (server mode: up to 100).
  * Streams NDJSON events:
  *   { type: "meta", ... }
  *   { type: "thinking", text }
@@ -54,6 +60,23 @@ export async function POST(request: Request) {
     );
   }
 
+  const meta = clientMetaFromRequest(request);
+  const slot = connectionManager.tryAcquire({
+    kind: "chat",
+    clientId: meta.clientId,
+    remote: meta.remote,
+    provider: body.source.provider,
+    model: body.source.model,
+  });
+  if (!slot.ok) {
+    return capacityResponse({
+      active: slot.active,
+      max: slot.max,
+      reason: slot.reason,
+      retryAfterSec: slot.retryAfterSec,
+    });
+  }
+
   const enableThinking = body.source.enableThinking === true;
   const maxTokens = resolveMaxTokens(body.source);
   const messages = prepareMessagesForSpeed(rawMessages, body.source);
@@ -62,6 +85,7 @@ export async function POST(request: Request) {
   const started = Date.now();
   let firstTokenAt: number | null = null;
   let firstAnswerAt: number | null = null;
+  const connectionId = slot.id;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -82,6 +106,9 @@ export async function POST(request: Request) {
           provider: body.source.provider,
           enableThinking,
           maxTokens,
+          connectionId,
+          activeConnections: slot.active,
+          maxConnections: slot.max,
           ...(remappedFrom
             ? {
                 remappedFrom,
@@ -90,8 +117,6 @@ export async function POST(request: Request) {
             : {}),
         });
 
-        // Build OpenAI-compatible body. Extra fields are ignored by servers
-        // that don't support them; Qwen/LM Studio use them to skip CoT.
         const createBody: Record<string, unknown> = {
           model,
           messages,
@@ -101,13 +126,9 @@ export async function POST(request: Request) {
         };
 
         if (!enableThinking) {
-          // Qwen3 / many local templates
           createBody.enable_thinking = false;
           createBody.chat_template_kwargs = { enable_thinking: false };
-          // Some llama.cpp / LM Studio builds
           createBody.reasoning = false;
-          // Nemotron (and some OpenAI-compat reasoning ports): only this
-          // fully skips reasoning tokens. `reasoning: false` is ignored.
           createBody.reasoning_effort = "none";
         }
 
@@ -125,7 +146,6 @@ export async function POST(request: Request) {
 
           const reasoning = extractReasoningDelta(delta);
           if (reasoning) {
-            // If user disabled thinking but model still streams it, still show it
             if (firstTokenAt === null) firstTokenAt = Date.now();
             send({ type: "thinking", text: reasoning });
           }
@@ -136,21 +156,11 @@ export async function POST(request: Request) {
 
           if (firstTokenAt === null) firstTokenAt = Date.now();
 
-          if (enableThinking) {
-            const { thinking, content } = splitter.push(rawContent);
-            if (thinking) send({ type: "thinking", text: thinking });
-            if (content) {
-              if (firstAnswerAt === null) firstAnswerAt = Date.now();
-              send({ type: "delta", text: content });
-            }
-          } else {
-            // Fast path: still strip accidental <think> tags if model ignores flags
-            const { thinking, content } = splitter.push(rawContent);
-            if (thinking) send({ type: "thinking", text: thinking });
-            if (content) {
-              if (firstAnswerAt === null) firstAnswerAt = Date.now();
-              send({ type: "delta", text: content });
-            }
+          const { thinking, content } = splitter.push(rawContent);
+          if (thinking) send({ type: "thinking", text: thinking });
+          if (content) {
+            if (firstAnswerAt === null) firstAnswerAt = Date.now();
+            send({ type: "delta", text: content });
           }
         }
 
@@ -171,8 +181,12 @@ export async function POST(request: Request) {
         const message = err instanceof Error ? err.message : String(err);
         send({ type: "error", error: message });
       } finally {
+        connectionManager.release(connectionId);
         controller.close();
       }
+    },
+    cancel() {
+      connectionManager.release(connectionId);
     },
   });
 
@@ -181,6 +195,9 @@ export async function POST(request: Request) {
       "Content-Type": "application/x-ndjson; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-MattChat-Connection-Id": connectionId,
+      "X-MattChat-Active": String(slot.active),
+      "X-MattChat-Max": String(slot.max),
     },
   });
 }

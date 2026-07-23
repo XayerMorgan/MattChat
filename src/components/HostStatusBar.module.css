@@ -1,0 +1,76 @@
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin-top: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.68rem;
+  line-height: 1.2;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+.barMuted {
+  opacity: 0.75;
+}
+
+.barLocal {
+  border-color: rgba(122, 162, 255, 0.25);
+}
+
+.barServer {
+  border-color: rgba(80, 200, 120, 0.35);
+  background: rgba(80, 200, 120, 0.06);
+}
+
+.barHot {
+  border-color: rgba(255, 120, 100, 0.5);
+  color: #ffb4a8;
+  background: rgba(255, 80, 60, 0.08);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.barLocal .dot {
+  background: #7aa2ff;
+}
+
+.barServer .dot {
+  background: #50c878;
+}
+
+.barHot .dot {
+  background: #ff7864;
+  box-shadow: 0 0 6px rgba(255, 120, 100, 0.6);
+}
+
+.mode {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  color: var(--text);
+}
+
+.name {
+  color: var(--text-dim);
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--text-muted);
+}

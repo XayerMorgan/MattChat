@@ -4,26 +4,37 @@ Local web chat client for a **shared LM Studio server** (and optional cloud APIs
 
 ## How this is meant to work
 
+### Pattern A — Local clients (default / team install)
+
 ```text
-  Your laptop / buddy laptop / any client
-        │
-        │  npm start → http://localhost:3010
-        │  (MattChat runs on EACH machine)
-        ▼
-  MattChat (Next.js on your computer)
-        │
-        │  OpenAI-compatible API
-        ▼
-  Mac Studio (or other host) running LM Studio
-  e.g. http://vpit-llm2.jck.txstate.edu:1234/v1
+  Each person's laptop runs MattChat → http://localhost:3010
+                 │
+                 ▼
+  Shared Mac Studio LM Studio → http://host:1234/v1
 ```
 
 | Piece | Who runs it | Where |
 |--------|-------------|--------|
 | **MattChat** | Each person | Their own Mac / Linux / Windows PC |
-| **LM Studio** | Lab / host machine | One Mac Studio (shared), port **1234** |
+| **LM Studio** | Lab / host | One Mac Studio, port **1234** |
 
-You do **not** share HTML only. Each person clones this repo, runs MattChat locally, and points Base URL at the Mac Studio.
+### Pattern B — Shared MattChat server (optional later)
+
+Run MattChat **once** on the Mac Studio; everyone opens `http://studio-ip:3010`.
+
+```bash
+./scripts/start-server-mac.sh   # MATTCHAT_HOST_MODE=server, max 100 connections
+```
+
+| Mode | Env | Capacity | UI badge |
+|------|-----|----------|----------|
+| **Local** | `MATTCHAT_HOST_MODE=local` | default 32 | Local |
+| **Server** | `MATTCHAT_HOST_MODE=server` | **100** concurrent streams | Server · n/100 |
+
+Status API: `GET /api/status` · Admin: `GET /api/admin/status`  
+Details: **[docs/SERVER.md](./docs/SERVER.md)**
+
+You do **not** share HTML only. Clients either install the app (A) or use the shared server URL (B).
 
 ---
 
@@ -146,6 +157,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://vpit-llm2.jck.txstate.edu:1234/v
 |-----|---------|
 | **[SETUP.md](./SETUP.md)** | Full install (Mac / Linux / Windows), env, troubleshooting |
 | **[BUDDY.md](./BUDDY.md)** | Short handoff for a teammate (“clone, run, point here”) |
+| **[docs/SERVER.md](./docs/SERVER.md)** | Multi-user Mac Studio hosting, capacity, admin API |
 | **[AGENTS.md](./AGENTS.md)** | Notes for AI coding agents |
 
 ---

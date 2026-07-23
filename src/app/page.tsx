@@ -34,9 +34,11 @@ import {
 import { nowIso, type TimingStamp } from "@/lib/time";
 import { FAST_DEFAULTS } from "@/lib/speed";
 import { streamChat } from "@/lib/streamClient";
+import { mattchatHeaders } from "@/lib/clientId";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { TimingCompare, TimingStrip } from "@/components/TimingStrip";
 import { KeyManager } from "@/components/KeyManager";
+import { HostStatusBar } from "@/components/HostStatusBar";
 
 type Mode = "single" | "ab";
 type ConnState = "idle" | "loading" | "ok" | "error";
@@ -540,7 +542,10 @@ export default function Home() {
     try {
       const res = await fetch("/api/models", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...mattchatHeaders(),
+        },
         body: JSON.stringify({
           provider: source.provider,
           baseUrl: source.baseUrl || undefined,
@@ -1470,6 +1475,7 @@ export default function Home() {
           </div>
           <span className={styles.portPill}>:3010</span>
         </div>
+        <HostStatusBar />
 
         <div className={styles.modeToggle}>
           <button

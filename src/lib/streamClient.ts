@@ -1,4 +1,5 @@
 import type { ChatMessage, SourceConfig } from "@/lib/providers";
+import { mattchatHeaders } from "@/lib/clientId";
 
 export type StreamMeta = {
   label: string;
@@ -26,13 +27,23 @@ export async function streamChat(opts: {
 }): Promise<StreamResult> {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...mattchatHeaders(),
+    },
     body: JSON.stringify({ source: opts.source, messages: opts.messages }),
     signal: opts.signal,
   });
 
   if (!res.ok || !res.body) {
     const fallback = await res.text().catch(() => "");
+    // Surface capacity errors cleanly
+    try {
+      const j = JSON.parse(fallback) as { error?: string; code?: string };
+      if (j?.error) throw new Error(j.error);
+    } catch (e) {
+      if (e instanceof Error && e.message && e.message !== fallback) throw e;
+    }
     throw new Error(fallback || `Chat request failed (${res.status})`);
   }
 
