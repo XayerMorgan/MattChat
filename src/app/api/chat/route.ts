@@ -11,7 +11,11 @@ import {
   prepareMessagesForSpeed,
   resolveMaxTokens,
 } from "@/lib/speed";
-import { ThinkingSplitter, extractReasoningDelta } from "@/lib/thinking";
+import {
+  ThinkingSplitter,
+  extractReasoningDelta,
+  finalizeStreamOutput,
+} from "@/lib/thinking";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,6 +172,10 @@ export async function POST(request: Request) {
         let completionTokens: number | null = null;
         let totalTokens: number | null = null;
         let reasoningTokens: number | null = null;
+        // Accumulate for end-of-stream recovery when answer never left the
+        // thinking channel (unclosed tags / reasoning-only providers).
+        let accThinking = "";
+        let accContent = "";
 
         for await (const chunk of completion) {
           const usage = chunk.usage;
@@ -191,28 +199,79 @@ export async function POST(request: Request) {
           const reasoning = extractReasoningDelta(delta);
           if (reasoning) {
             if (firstTokenAt === null) firstTokenAt = Date.now();
+            accThinking += reasoning;
             send({ type: "thinking", text: reasoning });
           }
 
-          const rawContent =
-            typeof delta.content === "string" ? delta.content : "";
+          // Some OpenAI-compatible servers send content as an array of parts
+          let rawContent = "";
+          if (typeof delta.content === "string") {
+            rawContent = delta.content;
+          } else if (Array.isArray(delta.content)) {
+            rawContent = (delta.content as unknown[])
+              .map((part) => {
+                if (typeof part === "string") return part;
+                if (
+                  part &&
+                  typeof part === "object" &&
+                  "text" in part &&
+                  typeof (part as { text?: unknown }).text === "string"
+                ) {
+                  return (part as { text: string }).text;
+                }
+                return "";
+              })
+              .join("");
+          }
           if (!rawContent) continue;
 
           if (firstTokenAt === null) firstTokenAt = Date.now();
 
           const { thinking, content } = splitter.push(rawContent);
-          if (thinking) send({ type: "thinking", text: thinking });
+          if (thinking) {
+            accThinking += thinking;
+            send({ type: "thinking", text: thinking });
+          }
           if (content) {
             if (firstAnswerAt === null) firstAnswerAt = Date.now();
+            accContent += content;
             send({ type: "delta", text: content });
           }
         }
 
         const tail = splitter.flush();
-        if (tail.thinking) send({ type: "thinking", text: tail.thinking });
+        if (tail.thinking) {
+          accThinking += tail.thinking;
+          send({ type: "thinking", text: tail.thinking });
+        }
         if (tail.content) {
           if (firstAnswerAt === null) firstAnswerAt = Date.now();
+          accContent += tail.content;
           send({ type: "delta", text: tail.content });
+        }
+
+        // If the answer never arrived as content (common with unclosed <think>
+        // or reasoning-only streams), peel/promote so clients get a delta.
+        if (!accContent.trim() && accThinking.trim()) {
+          const recovered = finalizeStreamOutput(accThinking, accContent);
+          const extra = recovered.content;
+          if (extra.trim()) {
+            // Only send the portion that was not already streamed as content
+            const already = accContent;
+            const toSend = extra.startsWith(already)
+              ? extra.slice(already.length)
+              : already
+                ? ""
+                : extra;
+            // When content was empty, send full recovered answer once
+            const payload = already ? toSend : extra;
+            if (payload.trim()) {
+              if (firstAnswerAt === null) firstAnswerAt = Date.now();
+              send({ type: "delta", text: payload });
+              accContent = extra;
+            }
+            // If we peeled thinking down, client will also re-finalize
+          }
         }
 
         send({

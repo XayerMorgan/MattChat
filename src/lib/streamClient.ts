@@ -1,5 +1,6 @@
 import type { ChatMessage, SourceConfig } from "@/lib/providers";
 import { mattchatHeaders } from "@/lib/clientId";
+import { finalizeStreamOutput } from "@/lib/thinking";
 
 export type StreamMeta = {
   label: string;
@@ -127,9 +128,13 @@ export async function streamChat(opts: {
     }
   }
 
+  // Recover answers that only arrived as thinking / unclosed <think> blocks
+  // so A/B (and single) output boxes are not left empty after a long CoT.
+  const finalized = finalizeStreamOutput(thinking, text);
+
   return {
-    text,
-    thinking,
+    text: finalized.content,
+    thinking: finalized.thinking,
     meta,
     latencyMs,
     ttftMs,

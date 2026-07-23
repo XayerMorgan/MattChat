@@ -136,3 +136,61 @@ export function extractReasoningDelta(delta: unknown): string {
   // Some SDKs nest under delta.reasoning_content as object — rare
   return "";
 }
+
+/**
+ * After a stream ends, recover answer text that never arrived as `delta` events.
+ *
+ * Common failure modes:
+ * - Model left `<think>` unclosed → entire answer sat in the thinking channel
+ * - Answer after `</think>` was still appended to thinking
+ * - Provider only filled reasoning_content and left content empty
+ *
+ * Returns cleaned thinking + content suitable for the UI output box.
+ */
+export function finalizeStreamOutput(
+  thinking: string,
+  content: string
+): { thinking: string; content: string } {
+  let t = typeof thinking === "string" ? thinking : "";
+  let c = typeof content === "string" ? content : "";
+
+  // 1) Peel any trailing answer after the last closing think tag in thinking
+  let lastClose = -1;
+  let closeLen = 0;
+  for (const tag of CLOSE_TAGS) {
+    const idx = t.toLowerCase().lastIndexOf(tag.toLowerCase());
+    if (idx > lastClose) {
+      lastClose = idx;
+      closeLen = tag.length;
+    }
+  }
+  if (lastClose >= 0) {
+    const after = t.slice(lastClose + closeLen).replace(/^\s+/, "");
+    const before = t.slice(0, lastClose).replace(/\s+$/, "");
+    if (after.trim()) {
+      // Prefer peeled answer when content is empty; otherwise keep content
+      if (!c.trim()) c = after;
+      else if (!c.includes(after.trim())) c = `${c}\n${after}`.trim();
+      t = before;
+    } else {
+      t = before;
+    }
+  }
+
+  // 2) Re-parse thinking as a full blob if content still empty (tags inside)
+  if (!c.trim() && t.trim()) {
+    const reparsed = splitThinkingFromText(t);
+    if (reparsed.content.trim()) {
+      t = reparsed.thinking;
+      c = reparsed.content;
+    }
+  }
+
+  // 3) Last resort: provider put the whole reply in reasoning / think channel
+  if (!c.trim() && t.trim()) {
+    c = t;
+    // Keep thinking visible too so the Thinking block is not empty mid-stream history
+  }
+
+  return { thinking: t, content: c };
+}

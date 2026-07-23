@@ -1223,22 +1223,58 @@ export default function Home() {
 
     // Authoritative live draft for this A/B turn. Parallel stream setStates used to
     // clobber each other (especially on a 2nd test in one session), so pane A text
-    // could vanish and both copy boxes looked like they lived under B.
+    // could vanish. Always merge from abDraft *inside* the setState updater.
     const abDraft = {
       a: { ...initialA },
       b: { ...initialB },
     };
 
     const publishAb = (which: "a" | "b", patch: Partial<PaneState>) => {
-      abDraft[which] = { ...abDraft[which], ...patch };
-      const snapA = { ...abDraft.a };
-      const snapB = { ...abDraft.b };
-      setMessages((prev) =>
-        prev.map((msg) => {
+      // Never let an empty patch wipe a non-empty text/thinking already drafted
+      const prevPane = abDraft[which];
+      const nextPatch = { ...patch };
+      if (
+        typeof nextPatch.text === "string" &&
+        !nextPatch.text.trim() &&
+        prevPane.text.trim()
+      ) {
+        delete nextPatch.text;
+      }
+      if (
+        typeof nextPatch.thinking === "string" &&
+        !nextPatch.thinking.trim() &&
+        (prevPane.thinking || "").trim()
+      ) {
+        delete nextPatch.thinking;
+      }
+      abDraft[which] = { ...abDraft[which], ...nextPatch };
+      setMessages((prev) => {
+        // Read draft at apply-time so queued updates never apply a stale snap
+        // that would blank side A when side B publishes.
+        const snapA = { ...abDraft.a };
+        const snapB = { ...abDraft.b };
+        const idx = prev.findIndex(
+          (msg) => msg.id === abId && msg.kind === "ab"
+        );
+        if (idx === -1) {
+          // Race: stream events before the initial ab row committed
+          return [
+            ...prev,
+            {
+              id: abId,
+              kind: "ab" as const,
+              prompt: display,
+              startIso,
+              a: snapA,
+              b: snapB,
+            },
+          ];
+        }
+        return prev.map((msg) => {
           if (msg.id !== abId || msg.kind !== "ab") return msg;
           return { ...msg, a: snapA, b: snapB };
-        })
-      );
+        });
+      });
     };
 
     setMessages((m) => [
@@ -1248,8 +1284,8 @@ export default function Home() {
         kind: "ab",
         prompt: display,
         startIso,
-        a: { ...initialA },
-        b: { ...initialB },
+        a: { ...abDraft.a },
+        b: { ...abDraft.b },
       },
     ]);
 
@@ -1279,6 +1315,19 @@ export default function Home() {
           which === "a"
             ? composedA.personalityName
             : composedB.personalityName;
+
+        // Prefer stream result (already finalized for think→answer recovery),
+        // then draft, then thinking-as-output last resort so A never stays blank.
+        const finalText = result.error
+          ? abDraft[which].text || result.error
+          : result.text.trim()
+            ? result.text
+            : abDraft[which].text.trim()
+              ? abDraft[which].text
+              : (result.thinking || abDraft[which].thinking || "").trim();
+        const finalThinking =
+          result.thinking || abDraft[which].thinking || "";
+
         recordMetric({
           sessionId,
           queryId: `${abId}-${which}`,
@@ -1291,8 +1340,8 @@ export default function Home() {
           personality: personalityName,
           promptPreview: promptPreview(prompt || display),
           promptChars: (prompt || display).length,
-          responseChars: (result.text || "").length,
-          thinkingChars: (result.thinking || "").length,
+          responseChars: (finalText || "").length,
+          thinkingChars: (finalThinking || "").length,
           latencyMs: result.latencyMs ?? null,
           ttftMs: result.ttftMs ?? null,
           answerTtftMs: result.answerTtftMs ?? null,
@@ -1303,10 +1352,8 @@ export default function Home() {
           error: result.error || "",
         });
         publishAb(which, {
-          text: result.error
-            ? abDraft[which].text || result.error
-            : result.text || abDraft[which].text,
-          thinking: result.thinking || abDraft[which].thinking,
+          text: finalText,
+          thinking: finalThinking,
           thinkingActive: false,
           latencyMs: result.latencyMs,
           ttftMs: result.ttftMs,
